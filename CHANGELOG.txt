@@ -1314,26 +1314,39 @@
   - 验证：全部通过（exit code 0）
 
 [2026-08-14] 72. 三个 Agent 工具管理统一到 ToolRegistry（消除手写 dict）
-  - 背景：SimpleAgent 用 ToolRegistry 门面，但 ReActAgent 手写
-    tool_map dict、FunctionCallAgent 手写 self.tools dict，
-    三套工具管理方式不一致，且后两者绕过熔断/过滤/校验
+
+[2026-08-19] 73. agents 目录按 framework/ 分类重构
+  - 背景：agents/ 目录下框架层代码（BaseAgent/AgentFactory/AgentRegistry）与 Agent 具体实现
+    混在一起，与 tools/framework/ 的风格不一致
   - 改动：
-    - tool_system.py：ToolRegistry 新增 find_tool(name, case_insensitive=True)，
-      大小写不敏感查找下沉到工具系统（LLM 输出大小写不可控）
-    - function_call_agent.py：self.tools dict → self.tool_registry；
-      _execute_function 统一走 execute_structured（获得熔断保护）；
-      add/remove/list/get_tool 全部委托 registry；清理重复 import
-    - ReAct_agent.py：tool_map dict → self.tool_registry；
-      _get_tool 用 find_tool；_execute_tool 统一走 execute_structured
-    - simple_agent.py：_get_tool 复用 find_tool（逻辑上移，门面保留）
-  - 验证：
-    - find_tool 大小写不敏感/精确优先/敏感模式 3 项 ✅
-    - FunctionCallAgent add/remove/list/get_tool/openai schema/
-      execute_structured 6 项 ✅
-    - ReActAgent registry + find_tool + 端到端 3 项 ✅
-    - SimpleAgent find_tool 1 项 ✅
-    - 全量测试：66 passed 无回归 ✅
-  - 验证：全部通过（exit code 0）
+    - 创建 agents/framework/ 子目录，存放基础设施层
+    - agent_framework.py、agent_router.py、agent_trace.py、session_store.py 移入 framework/
+    - 更新 18 处 import 路径（run.py、core/streaming.py、tools/framework/*.py、examples/、tests/）
+  - 验证：66 passed 无回归 ✅
+
+[2026-08-20] 74. 缓存层下沉到 core/cache.py + LLM 调用缓存
+  - 背景：SafeFullCache 定义在 tools/rag/rag_tool.py 中，导致 core/ 依赖 tools/ 的循环引用问题；
+    同时 LLM 调用没有缓存，相同问题重复调 API
+  - 改动：
+    - 新建 core/cache.py，将 SafeFullCache 从 rag_tool.py 迁移到 core 层
+    - 更新 4 个模块导入路径（rag_tool.py、note_tool.py、terminal_tool.py、gs_sc_pipeline.py）
+    - practiceLLM 新增 cache_size/cache_ttl 参数，invoke/think 走缓存（相同 model+messages+temperature 命中）
+    - 修复 rag_tool.py 中的 f-string \n 语法错误（Python 3.10 兼容）
+  - 验证：66 passed 无回归；缓存命中验证通过 ✅
+
+[2026-08-28] 75. 项目接入 Git 版本管理并推送至 GitHub
+  - 背景：项目开发至今未纳入版本管理，无法追溯变更历史
+  - 改动：
+    - git init 初始化本地仓库
+    - 配置 git 用户信息（M1iii）
+    - 关联远程仓库 https://github.com/M1iii/practiceLLM.git
+    - 强制推送（覆盖远程）main 分支，提交 73 files / 22583 insertions
+  - 验证：推送成功（forced update）✅
+
+[2026-08-28] 76. 更新 CHANGELOG 项目结构区块
+  - 背景：agents/framework/ 分类重构和 core/cache.py 新增后，项目结构图未及时更新
+  - 改动：更新 CHANGELOG 底部项目结构图，反映当前实际文件布局
+  - 验证：CHANGELOG 结构图与实际目录一致 ✅
 
 
 ================================================================
@@ -1346,14 +1359,17 @@
   │   └── builtin/        # 内置技能包（code_review / rag_practice）
   ├── core/               # 核心基础设施
   │   ├── __init__.py
-  │   ├── llm.py          # LLM 客户端（LLMClient 协议 + practiceLLM + stream_chunks 流式块生成器）
+  │   ├── llm.py          # LLM 客户端（LLMClient 协议 + practiceLLM + stream_chunks 流式块生成器 + LLM 调用缓存）
+  │   ├── cache.py        # 缓存层（SafeFullCache：TTL 淘汰 + 容量限制 + 一致性更新，被 RAG/GSSC/Note/Terminal 复用）
   │   └── streaming.py    # SSE 流式输出（SSEEvent 协议 + stream_agent + SSEClientStream + HTTP 演示）
   ├── agents/             # Agent 实现
   │   ├── __init__.py
-  │   ├── agent_framework.py        # Agent 统一框架（BaseAgent + AgentRegistry + AgentFactory + AgentAdapter + Message）
-  │   ├── agent_router.py           # Agent 智能路由（LLM 分类 + 关键词规则两级路由 + 兜底）
-  │   ├── agent_trace.py            # Agent 级执行轨迹（TraceLogger：LLM/工具事件 + 失败链 + JSONL）
-  │   ├── session_store.py          # 会话持久化（SQLite：会话元信息 + 消息历史 + 断点续聊）
+  │   ├── framework/                # Agent 基础设施层
+  │   │   ├── __init__.py
+  │   │   ├── agent_framework.py    # Agent 统一框架（BaseAgent + AgentRegistry + AgentFactory + AgentAdapter + Message）
+  │   │   ├── agent_router.py       # Agent 智能路由（LLM 分类 + 关键词规则两级路由 + 兜底）
+  │   │   ├── agent_trace.py        # Agent 级执行轨迹（TraceLogger：LLM/工具事件 + 失败链 + JSONL）
+  │   │   └── session_store.py      # 会话持久化（SQLite：会话元信息 + 消息历史 + 断点续聊）
   │   ├── simple_agent.py          # 简单聊天 Agent
   │   ├── ReAct_agent.py           # ReAct 推理行动 Agent
   │   ├── Reflection_agent.py      # 反思改进 Agent
