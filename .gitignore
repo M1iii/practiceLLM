@@ -1,0 +1,33 @@
+# ===== 环境与密钥（绝不提交）=====
+.env
+.env.*
+
+# ===== Python =====
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ===== 数据与日志 =====
+data/
+logs/
+*.log
+
+# ===== 测试缓存 =====
+.pytest_cache/
+.coverage
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+
+# ===== 本地工具 =====
+.trae-html-share-packages/
+
+# ===== 临时/调试 =====
+err.txt
+*.tmp

@@ -1,0 +1,1413 @@
+================================================================
+  项目变更记录 (CHANGELOG)
+  项目名称: practice - AI Agent 练习项目
+  按时间排序，从项目创建开始
+================================================================
+
+[2026-08-08] 1. 补齐 LLM 外部依赖
+  - 为 pyproject.toml 添加 openai 和 python-dotenv 依赖
+  - 使用 uv 安装依赖
+
+[2026-08-08] 2. 修复 llm.py 报错
+  - 修复第 61 行 IndentationError（__main__ 块缩进错误）
+  - 修复环境变量名不匹配（LLM_API_KEY_j → LLM_API_KEY）
+
+[2026-08-08] 3. 创建 SimpleAgent
+  - 创建 agent/ 文件夹及 __init__.py
+  - 创建 simple_agent.py，实现 SimpleAgent 类
+  - 功能：日常聊天、多轮对话历史维护、chat/reset/show_history 方法
+
+[2026-08-08] 4. 创建 ReActAgent 及工具系统
+  - 创建 tools.py：Tool 抽象基类、CalculatorTool、TimeTool
+  - 创建 ReAct_agent.py：基于 Thought-Action 循环的 ReAct 模式智能体
+  - 修复工具调用解析问题（参数多余方括号、多步骤响应）
+
+[2026-08-08] 5. 增强 SimpleAgent 工具调用
+  - 添加 _parse_tool_calls()：解析 LLM 响应中的工具调用标记
+  - 添加 _parse_tool_parameters()：智能解析工具参数为字典
+  - 添加 _execute_tool_call()：执行单个工具调用
+  - 添加 ToolRegistry.get_tool()：大小写不敏感的工具查找
+
+[2026-08-08] 6. 添加流式响应和便利方法
+  - llm.py invoke() 方法添加 stream 参数，支持流式打印
+  - SimpleAgent 添加 add_tool、remove_tool、has_tools、list_tools 方法
+  - ToolRegistry 添加 remove、has_tools、list_tools 方法
+
+[2026-08-08] 7. 构建 ReflectionAgent
+  - 创建 Reflection_agent.py
+  - 实现 ShortTermMemory 类：存储行动与反思轨迹
+  - 实现 ReflectionAgent 类：初始回答→反思→改进的循环优化
+  - 提示词模板：INITIAL_PROMPT、REFLECT_PROMPT、REFINE_PROMPT
+
+[2026-08-08] 8. 构建 PlanAndSolveAgent
+  - 创建 plan_and_solve_agent.py
+  - 实现 Planner 类：将复杂问题分解为步骤列表
+  - 实现 Executor 类：循环执行计划步骤，维护历史记录
+  - 实现 PlanAndSolveAgent 主类：整合规划器和执行器
+
+[2026-08-08] 9. 构建 FunctionCallAgent
+  - 创建 function_call_agent.py
+  - 基于 OpenAI 原生 function calling API（非文本解析）
+  - 实现 _invoke_with_tools()：封装原生 function calling
+  - 工具调用循环：LLM 决策→执行工具→结果回传→继续推理
+
+[2026-08-08] 10. 构建增强版工具系统
+  - 创建 tool_system.py
+  - 实现 ToolParameter 数据类：name/type/description/required/default
+  - 实现 Tool 抽象基类：统一 run(args:dict)->str 接口
+  - 实现 FunctionTool 包装器：函数直接注册为工具
+  - 实现 ToolRegistry：支持 Tool 对象注册和函数直接注册两种方式
+  - 包含参数验证、to_json_schema、to_openai_format 等方法
+
+[2026-08-08] 11. 增强工具系统功能
+  - ToolParameter 新增 enum 和 items 字段（支持枚举值和数组类型）
+  - 新增 _param_to_schema() 静态方法：递归处理参数转 JSON Schema
+  - to_json_schema() 增强：正确处理数组类型（含 items）、枚举值、默认值
+  - 新增 to_openai_schema 别名方法
+  - get_tools_description() 增强：输出包含参数详情的格式化描述
+  - 新增 SearchTool 示例：展示数组类型和枚举值参数
+
+[2026-08-08] 12. 项目文件分类整理
+  - 创建 core/ 目录：存放核心基础设施（llm.py）
+  - 创建 agents/ 目录：存放所有 Agent 实现
+    （simple_agent, ReAct_agent, Reflection_agent, plan_and_solve_agent, function_call_agent）
+  - 创建 tools/ 目录：存放工具系统（tools.py, tool_system.py）
+  - 更新所有文件的导入路径（from llm → from core.llm, from agent.tools → from tools.tools）
+  - 删除旧的 agent/ 目录
+  - 所有模块导入验证通过
+
+[2026-08-09] 13. 创建多源搜索工具 AdvancedSearchTool
+  - 创建 tools/advanced_search_tool.py
+  - 支持博查搜索和 Tavily 双后端，优先博查，失败自动回退 Tavily
+  - 统一格式化输出（标题/URL/来源/摘要）
+  - API Key 从 .env 读取，自动检测占位符判断可用性
+  - 使用标准库 urllib，零外部依赖
+  - .env 新增 BOCHA_API_KEY 和 TAVILY_API_KEY 配置项
+
+[2026-08-09] 14. 创建高级搜索工具注册表
+  - 创建 tools/search_registry.py
+  - 提供 create_search_registry() 工厂函数
+  - 预装工具：AdvancedSearch、Calculator、Time
+
+[2026-08-09] 15. 确立 CHANGELOG 更新规则
+  - 规定每次代码变更后必须同步更新 CHANGELOG.txt
+  - 已记录到项目记忆 project_memory.md
+
+[2026-08-09] 16. 创建工具链管理器
+  - 创建 tools/tool_chain_manager.py
+  - 实现 ToolChain 类：支持多工具顺序执行，步骤间通过上下文传递数据
+  - 实现 ToolChainManager 类：管理多个工具链的注册与执行
+  - 适配现有 ToolRegistry 接口（execute(name, args_dict)）
+  - 支持 input_template 模板变量替换和 input_key 参数映射
+  - 包含 create_search_chain 和 create_research_chain 示例
+
+[2026-08-09] 17. 创建异步工具执行器
+  - 创建 tools/async_tool_executor.py
+  - 实现 AsyncToolExecutor 类：基于 ThreadPoolExecutor + asyncio
+  - 支持 execute_tool_async()：单工具异步执行
+  - 支持 execute_tools_parallel()：多工具并行执行，含状态追踪
+  - 支持 execute_tools_sequence()：异步顺序执行（适用于有依赖的场景）
+  - 惰性初始化线程池，提供 shutdown() 资源清理
+
+[2026-08-09] 18. 为 ReflectionAgent 添加质量评分机制
+  - 新增 SCORE_PROMPT 评分提示词模板（准确性/完整性/清晰度/实用性四维度）
+  - 新增 _score() 方法：调用 LLM 打分（0-100），正则解析分数
+  - 新增 score_threshold 参数（默认 85 分），可在初始化时配置
+  - 修改 run() 流程：反思后评分 → 达到阈值则提前终止 → 否则继续改进
+  - ShortTermMemory 新增 "score" 类型标签（📊 质量评分）
+  - 验证：初始回答 95 分 ≥ 阈值 85，第 1 轮即提前终止
+
+[2026-08-09] 19. 创建 Tree-of-Thought 智能体
+  - 创建 agents/TreeOfThought_agent.py
+  - 实现 ThoughtNode 数据结构：推理树节点，支持路径回溯
+  - 三步核心流程：
+    1. Propose: 生成 k 个不同推理思路（temperature=0.8 促进多样性）
+    2. Evaluate: 对每个思路评分 0-10（temperature=0 确保稳定）
+    3. Search & Prune: beam search 保留最优 b 条路径，低于阈值剪枝
+  - 可配参数：n_branches(3)、beam_width(2)、max_depth(3)、value_threshold(3.0)
+  - 验证：水池问题三管齐开，3 层深度搜索，正确求解 4.8 小时
+
+[2026-08-09] 20. 创建 MemoryTool（记忆工具）- 第一部分：添加记忆
+  - 创建 tools/memory_tool.py
+  - 实现 MemoryEntry 数据类：memory_id/content/memory_type/importance/timestamp/session_id/file_path/modality/metadata
+  - 实现 MemoryTool 类，支持 add 操作：
+    - 四种记忆类型：working(0.6)/episodic(0.8)/semantic(0.9)/perceptual(0.7)
+    - 自动补充时间戳和会话 ID
+    - 基于文件扩展名自动推断模态（image/audio/video/code/document/data/text）
+    - 支持额外元数据键值对（**metadata）
+    - importance 优先级：显式传入 > 类型默认值 > 0.5
+  - 验证：成功添加 6 条记忆（工作/情景/语义/感知 + 默认重要度 + 代码模态推断）
+
+[2026-08-09] 21. MemoryTool 添加 search_memory（搜索记忆）功能
+  - 新增 search action，参数：query/limit/memory_types/memory_type/min_importance
+  - _normalize_search_params()：参数标准化（类型合并去重、范围限制、有效性校验）
+  - _tokenize()：中英文混合分词（中文 2-gram 展开）
+  - _calculate_relevance()：相关度评分（content 0.6 + metadata 0.3 + type 0.1 + 子串匹配加成）
+  - _format_search_results()：格式化输出（筛选条件/匹配数/相关度/综合分）
+  - 综合排序：相关度*0.7 + 重要度*0.3
+  - 验证：7 项测试通过（基本搜索/类型过滤/多类型+阈值/无匹配/参数组合/无效校验/limit）
+
+[2026-08-09] 22. MemoryTool 添加 execute 统一入口
+  - 新增 execute(action, **kwargs) 方法：接受操作名 + 关键字参数，内部组装为字典委托给 run()
+  - 用法：tool.execute("add", content="...", memory_type="working")
+  - 演示代码全部改用 execute 入口，验证 add + search 均正常工作
+
+[2026-08-09] 23. MemoryTool 添加 forget_memory（遗忘记忆）功能
+  - 新增 forget action，参数：strategy/threshold/max_age_days
+  - 五种遗忘策略：
+    1. importance: 删除 importance < threshold 的记忆
+    2. time: 删除超过 max_age_days 天的记忆
+    3. capacity: 超过 threshold 条时按重要度从低到高删除
+    4. mixed: 同时满足低重要度且超时的记忆被遗忘
+    5. dedup: Jaccard 文本相似度 ≥ threshold 的重复记忆，保留重要度更高的
+  - _text_similarity(): 基于 Jaccard 相似度的中英文混合文本相似度计算
+  - _format_forget_result(): 格式化输出（策略/前后数量/删除详情）
+  - 验证：6 项测试通过（importance/capacity/dedup/mixed/time/无效策略校验）
+
+[2026-08-09] 24. MemoryTool 添加 consolidate_memory（整合记忆）功能
+  - 新增 consolidate action，参数：from_type/to_type/importance_threshold/time_window_minutes
+  - 两种整合模式：
+    1. 类型转换：将重要的工作记忆→情景记忆，情景记忆→语义记忆（含 5 种合法转换路径）
+       - 转换后重要度 +0.05（上限 1.0），记录 consolidated_from/pre_consolidation_importance
+    2. 时间窗口：将过去 N 分钟内的记忆打包为一条整合记忆
+       - 原始记忆标记为「已整合」并保留，整合记忆取窗口内最高重要度
+       - 窗口结束时主动提醒用户（🔔 输出提醒信息）
+  - _format_consolidate_type_result() / _format_consolidate_window_result()：格式化输出
+  - 验证：6 项测试通过（working→episodic/episodic→semantic/非法路径/时间窗口全类型/时间窗口+类型过滤/无符合条件）
+
+[2026-08-09] 25. MemoryTool 引入 MemoryManager 架构
+  - 新增 MemoryModule 基类 + 4 个子类：
+    - WorkingMemory: 容量有限（Miller's Law 7±2），超限淘汰最不重要的
+    - EpisodicMemory / SemanticMemory / PerceptualMemory: 无限容量
+  - 新增 MemoryManager 统一接口：
+    - 根据 config 启用不同记忆模块（enabled_types / working_capacity）
+    - 提供 add / get_all / get_count / replace_all / remove_ids / is_enabled 等方法
+  - MemoryTool.__init__ 改为创建 MemoryManager 实例（self._manager）
+  - 所有 self._memories 引用替换为 self._manager 调用（共 33 处）
+  - 新增配置：config 参数支持 enabled_types 和 working_capacity
+  - 验证：4 项配置测试 + 全部原有功能（add/search/forget/consolidate）正常运行
+
+[2026-08-09] 26. WorkingMemory 混合检索策略（TF-IDF + 关键词回退）
+  - 重写 WorkingMemory 类，新增三大核心能力：
+    1. TTL 自动清理：超过 max_age_minutes 的记忆自动过期（默认60分钟）
+       - _expire_old_memories() 在 add/retrieve 时自动触发
+    2. 容量管理升级：默认容量 7→50，超出时淘汰最不重要的
+       - _remove_lowest_priority_memory() 按 (importance, timestamp) 排序淘汰
+    3. 混合检索 retrieve()：TF-IDF 向量化语义检索 + 关键词匹配回退
+       - _try_tfidf_search(): TF-IDF 向量化 + 余弦相似度（≥2条记忆时启用）
+       - _calculate_keyword_score(): Jaccard 相似度 + 子串匹配加成
+       - _calculate_time_decay(): 指数衰减 exp(-age/TTL)
+  - 评分公式：(相似度 × 时间衰减) × (0.8 + 重要性 × 0.4)
+    - base_relevance = tfidf×0.7 + keyword×0.3（有TF-IDF时）/ keyword（回退时）
+    - time_decay = exp(-age_minutes / max_age_minutes)
+    - importance_weight = 0.8 + importance × 0.4
+  - MemoryManager 配置新增 working_memory_ttl 参数（默认60分钟）
+  - _search_memory 更新：工作记忆使用混合检索，其他类型保持关键词匹配
+  - _format_search_results 更新：显示检索方式 + TF-IDF/关键词/时间衰减/重要性权重详情
+  - 新增演示：6项混合检索测试（TF-IDF语义检索/关键词回退/时间衰减/TTL过期/容量管理/直接retrieve）
+  - 验证：全部测试通过，包括原有 add/search/forget/consolidate 功能正常
+
+[2026-08-09] 27. EpisodicMemory 情景记忆混合检索（SQLite + 结构化过滤 + TF-IDF向量）
+  - 重写 EpisodicMemory 类，新增四大核心能力：
+    1. SQLite 持久化存储：支持崩溃恢复，_init_db()/_load_from_db()/_persist_episode()
+       - 启动时自动从 SQLite 加载历史记忆到内存
+       - add/clear/set_memories 操作同步写入 SQLite
+    2. 会话级索引：sessions 字典维护 session_id → [episode_id] 映射
+       - get_session_episodes() 按会话检索记忆
+       - _rebuild_session_index() 支持索引重建
+    3. 结构化预过滤：_structured_filter() 支持时间范围/会话/重要度三维过滤
+       - time_start/time_end: 时间范围过滤
+       - session_id: 会话级过滤
+       - min_importance: 重要度阈值过滤
+    4. 混合检索 retrieve()：结构化过滤 + TF-IDF向量语义检索
+       - _vector_search(): 复用 WorkingMemory TF-IDF 方法
+       - 关键词匹配回退（TF-IDF失败时）
+       - _calculate_recency(): 30天半衰期指数衰减 exp(-age_days/30)
+  - 评分公式：(向量相似度 × 0.8 + 时间近因性 × 0.2) × (0.8 + 重要性 × 0.4)
+    - base_relevance = vector_score × 0.8 + recency_score × 0.2
+    - importance_weight = 0.8 + importance × 0.4
+    - final_score = base_relevance × importance_weight
+  - MemoryManager 配置新增 episodic_db_path 参数（默认 :memory:）
+  - _search_memory 更新：情景记忆使用混合检索，支持 session_id 过滤参数
+  - _format_search_results 更新：新增 recency_score 分支，显示情景记忆检索详情
+    - 向量相似度/TF-IDF得分/关键词匹配分/时间近因性/基础相关度/重要性权重/最终得分
+  - 新增演示：6项情景记忆测试
+    1. 结构化过滤 + TF-IDF向量检索
+    2. 会话级检索（session_id 过滤）
+    3. 重要度过滤（min_importance）
+    4. 时间近因性效果（60天前记忆 recency=0.1353 vs 新记忆 recency=1.0）
+    5. SQLite 持久化验证（跨实例数据恢复）
+    6. 直接调用 EpisodicMemory.retrieve()
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 28. SemanticMemory 语义记忆混合检索（知识图谱 + TF-IDF向量 + 混合排序）
+  - 新增 Entity 和 Relation 数据结构：
+    - Entity: entity_id/name/entity_type/memory_ids，支持实体类型推断
+    - Relation: relation_id/source_entity/target_entity/relation_type/memory_id/weight
+  - 重写 SemanticMemory 类，新增五大核心能力：
+    1. 内存知识图谱：entities 字典 + relations 列表，支持图检索
+       - add() 时自动抽取实体/关系并构建图谱
+       - set_memories() 重建整个知识图谱
+       - get_entity_relations() 查询实体关系
+    2. 轻量级实体抽取 _extract_entities()：
+       - 已知技术关键词表（python/java/ai/机器学习/tensorflow 等 35+ 词）
+       - 英文专有名词（大写开头匹配）
+       - 中文模式抽取（X是Y/X使用Y/X包含Y/X属于Y/X支持Y）
+       - 引号内容抽取
+    3. 轻量级关系抽取 _extract_relations()：
+       - is_a 关系：X是Y / X是一种Y
+       - uses 关系：X使用Y / X利用Y
+       - related_to 关系：X与Y / X和Y
+       - co_occurs 关系：同一记忆中的实体对自动建立共现关系
+    4. TF-IDF 向量检索 _vector_search()：复用 WorkingMemory 静态方法
+    5. 知识图谱检索 _graph_search()：
+       - 实体重叠度：查询实体与记忆实体的 Jaccard 相似度（0.6权重）
+       - 关系连接度：直接关系（0.3加分）+ 间接关系（0.15加分）（0.4权重）
+  - 评分公式：(向量相似度 × 0.7 + 图谱得分 × 0.3) × (0.8 + 重要性 × 0.4)
+    - base_relevance = vector_score × 0.7 + graph_score × 0.3
+    - importance_weight = 0.8 + importance × 0.4
+    - combined_score = base_relevance × importance_weight
+  - 检索方式自动判定：hybrid(向量+图谱) / vector(仅向量) / graph(仅图谱)
+  - _search_memory 更新：新增 4c 分支，语义记忆使用向量+图谱混合检索
+  - _format_search_results 更新：新增 graph_score 分支，显示向量相似度/图谱得分/
+    基础相关度/重要性权重/最终得分/匹配实体/实体总数
+  - 新增演示：6项语义记忆测试
+    1. 实体/关系抽取 + 知识图谱构建（5条记忆→9实体→15关系）
+    2. 混合检索「Python机器学习」（向量+图谱双匹配，匹配实体 python,机器学习）
+    3. 图谱检索「深度学习神经网络」（通过实体关系找到关联记忆）
+    4. 重要度过滤（min_importance=0.8）
+    5. 无关查询「午饭面条」（正确排除技术记忆）
+    6. 直接调用 retrieve() + 实体关系查询
+       - retrieve('机器学习'): TensorFlow hybrid(vec=0.5341,graph=0.3200)
+       - retrieve('前端框架'): React/Vue vector匹配, Django graph间接匹配
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 29. SemanticMemory 嵌入向量检索集成（百炼 text-embedding-v3 + TF-IDF fallback）
+  - 新增 EmbeddingClient 类：阿里云百炼 DashScope 嵌入 API 客户端
+    - OpenAI 兼容接口，调用 text-embedding-v3 模型
+    - MD5 文本缓存，避免重复 API 调用（首次 386ms → 二次 0ms 缓存命中）
+    - 批量嵌入 embed_batch()，减少网络请求次数
+    - 自动检测 API Key 可用性，不可用时返回 None 触发 fallback
+    - cosine_similarity_dense() 稠密向量余弦相似度计算
+  - SemanticMemory 类集成嵌入向量检索：
+    - add() 时自动生成嵌入向量并存储到 _embeddings 字典
+    - set_memories() 批量生成嵌入向量（embed_batch）
+    - _vector_search() 优先嵌入向量检索，无向量或 API 不可用时回退 TF-IDF
+    - retrieve() 返回 vector_method 字段（"embedding" / "tfidf"）
+    - clear() 同步清理嵌入向量存储
+  - _format_search_results 更新：显示向量方法标签（嵌入向量 / TF-IDF）
+  - 新增演示测试：
+    - 测试 0: 嵌入 API 可用性检测（✅ 百炼 API 可用，向量维度 1024）
+    - 测试 7: 嵌入 vs TF-IDF 对比（嵌入 score=0.5497 vs TF-IDF score=0.2824）
+      嵌入向量能捕捉语义相似度（「深度学习」≈「机器学习」），TF-IDF 仅依赖词汇重叠
+    - 测试 8: 嵌入缓存验证（首次 386.2ms API 请求 → 二次 0.0ms 缓存命中，向量一致）
+  - 验证：全部测试通过，嵌入向量检索 + TF-IDF fallback + 缓存机制均正常
+
+[2026-08-09] 30. LLM 重排序检索（TF-IDF 粗筛 + LLM 精排）
+  - 新增 LLMReranker 类：两阶段检索重排序器
+    - 阶段一（TF-IDF 粗筛）：对所有候选记忆计算 TF-IDF 余弦相似度，快速取 top-k
+    - 阶段二（LLM 精排）：将粗筛候选 + 查询发送给 LLM，按语义相关性重新排序打分
+    - RERANK_PROMPT：精心设计的提示词，要求 LLM 返回结构化 JSON（index/relevance/reason）
+    - _parse_llm_response()：正则提取 JSON 数组，容错解析
+    - _fallback_rerank()：LLM 调用失败时按 TF-IDF 分回退，保证可用性
+    - extract_keywords()：TF-IDF 关键词抽取辅助方法
+  - MemoryTool 集成：
+    - 新增 rerank 动作，参数：query/memory_type/coarse_limit/rerank_limit/min_importance
+    - _rerank_memory()：收集候选 → TF-IDF 关键词抽取 → 两阶段检索 → 格式化输出
+    - _format_rerank_results()：展示重排序摘要（候选池→粗筛→精排流程 + LLM 相关性/理由）
+  - 新增演示测试（7 项）：
+    - 测试 1: TF-IDF 关键词抽取（Python框架→[python, 框架, ...]）
+    - 测试 2: 基本 rerank「Python 深度学习框架」→ TensorFlow(0.95) + PyTorch(0.95)
+    - 测试 3: search vs rerank 对比「前端框架」→ LLM 能区分前端/后端框架
+    - 测试 4: 语义理解「容器技术」→ 匹配 Docker(1.00) + K8s(0.90)，词汇不重叠但语义相关
+    - 测试 5: 无关查询排除「午饭」→ 正确匹配午饭记忆，编程记忆 relevance=0.00
+    - 测试 6: 直接调用 LLMReranker.rerank()「数据存储」→ MySQL(0.95) + Redis(0.90)
+    - 测试 7: 关键词抽取辅助验证（4 组查询）
+  - 验证：全部测试通过，LLM 重排序能纠正 TF-IDF 的语义盲区，且 LLM 失败时安全回退
+
+[2026-08-09] 31. PerceptualMemory 感知记忆多模态检索（多模态存储 + 跨模态语义检索）
+  - 重写 PerceptualMemory 类，新增六大核心能力：
+    1. 多模态存储：支持 text/image/audio/video/code/document/data 七种模态
+       - vector_stores[modality] = {memory_id: embedding} 按模态分离向量存储
+       - get_modality_stats() 模态数量统计
+    2. 语义文本构建 _build_semantic_text()：
+       - text 模态直接嵌入 content（百炼 text-embedding-v3）
+       - 非文本模态拼接「内容描述 + 文件名关键词 + 元数据标签 + 模态标记」再编码
+       - _extract_file_keywords() 从文件路径提取关键词（去扩展名 + 分隔符拆分）
+    3. 跨模态语义检索 _vector_search()：
+       - 嵌入向量优先，遍历所有模态向量存储计算余弦相似度
+       - API 不可用时回退 TF-IDF（基于语义文本计算）
+       - 支持 target_modality 模态过滤
+    4. 时间近因性 _calculate_recency_score()：
+       - 指数衰减 exp(-0.1 × age_hours/24)，最低保持 0.1 基础分
+       - 验证：365天前记忆 recency=0.1000，新记忆 recency=1.0000
+    5. 融合排序评分公式：
+       - base_relevance = vector_score × 0.8 + recency_score × 0.2
+       - importance_weight = 0.8 + importance × 0.4
+       - combined_score = base_relevance × importance_weight
+    6. 批量重建 set_memories()：按模态分组批量嵌入，减少 API 调用
+  - MemoryTool 集成：
+    - _search_memory 新增 4d 分支：感知记忆使用多模态向量检索（替代原关键词匹配）
+    - 新增 target_modality 参数（search perceptual 时按模态过滤）
+    - _format_search_results 新增感知记忆分支：显示模态/向量方法/向量相似度/时间近因性/评分详情
+    - ToolParameter 新增 target_modality 枚举参数
+  - 新增演示测试（7 项）：
+    - 测试 1: 多模态添加（8条记忆 → 6种模态，向量存储按模态分离）
+    - 测试 2: 跨模态检索「宠物照片」→ 猫咪图片 vec=0.6281 排第一
+    - 测试 3: 跨模态检索「派对氛围音乐」→ 生日录音 vec=0.7318 排第一
+    - 测试 4: 模态过滤「日落」+ target_modality=image → 仅返回图像记忆
+    - 测试 5: 无关查询「量子计算论文」→ 得分显著低于相关查询
+    - 测试 6: 时间近因性验证（365天前 0.1000 vs 新记忆 1.0000）
+    - 测试 7: 语义文本构建 + 文件名关键词提取（product/review/2026）
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 32. 构建 RAG 工具（多格式文档 + 混合检索 + Qwen 增强问答）
+  - 创建 tools/rag_tool.py，基于阿里云百炼（DashScope）的完整 RAG 管道：
+    1. DocumentLoader 多格式文档加载器（零外部依赖）：
+       - 文本直读：txt/md/json/csv/代码等（自动尝试 utf-8/gbk 编码）
+       - Office 解析：docx/xlsx/pptx 用标准库 zipfile + xml 提取文本
+       - PDF 解析：优先 pypdf，未安装时 zlib 解压 FlateDecode 流 + 正则提取
+       - 图片/音频/视频：文件名关键词 + 描述元数据语义化
+    2. TextSplitter 智能分块器：
+       - 按段落/句子边界（。！？；）切分，支持 chunk_size/overlap 配置
+       - 超长段落句子级切分 + 硬切分兜底
+    3. RagIndex 混合索引：
+       - 稠密向量（百炼 text-embedding-v3）+ 稀疏 TF-IDF 双路召回
+       - final = dense × 0.7 + sparse × 0.3，嵌入不可用时自动回退 TF-IDF
+    4. QwenChatClient 问答客户端：
+       - OpenAI 兼容接口，模型 qwen-plus（env RAG_LLM_MODEL 可配）
+       - RAG 提示词：严格基于资料回答 + 引用编号标注 + 资料缺失声明
+    5. RagTool 知识库管理（8 个动作）：
+       - add_file / add_text：加载→分块→嵌入→索引
+       - search：混合检索召回（显示 method/score/来源）
+       - query：检索 + Qwen 增强问答（带引用资料展示）
+       - list / stats / delete / clear：知识库管理
+  - .env 新增 RAG_LLM_MODEL=qwen-plus
+  - 新增演示测试（6 组，含样例文档程序化生成）：
+    - 测试 1: 添加 6 种来源文档（md/docx/pdf/图片/音频/文本），全部嵌入成功
+    - 测试 2: 知识库统计与列表（类型分布/分块数）
+    - 测试 3: 混合检索「RAG 的核心流程」→ rag_guide.md 排第一
+    - 测试 4: Qwen 问答「RAG 相比传统微调优势」→ 生成带 [1] 引用的答案
+    - 测试 5: 语义检索「如何让大模型回答更准确」→ 语义匹配 LLM 笔记
+    - 测试 6: 删除与清空（删 1 份 → 清空全部）
+  - 验证：全部测试通过（exit code 0）
+
+[2026-08-09] 33. RAG 统一文档转换引擎（MarkItDown → 结构化 Markdown 管道）
+  - 引入 MarkItDown 作为统一文档转换引擎（pip 安装 markitdown[all] 0.1.7）：
+    - 任意格式 → 结构化 Markdown → 统一分块 → 向量化 → 入库
+  - DocumentLoader 新增 _convert_to_markdown(path) -> str 转换函数：
+    - MarkItDown 识别文件类型并调用对应转换器（PDF/Office/HTML/媒体等）
+    - 转换失败或返回空（如无 LLM 客户端的图片/音频）时返回空字符串
+  - load() 入口重构为统一转换流程：
+    - 成功 → _split_markdown_blocks() 按 Markdown 标题结构分块（section 记录标题）
+    - 失败 → _load_fallback() 轻量回退解析（zipfile+xml / zlib+正则 / 元数据语义化）
+    - doc_meta.converter 与 block.metadata.converter 记录实际使用的引擎
+  - RagTool 新增 convert 动作：文档转换预览（不入库），显示转换引擎/分块数/内容
+  - 新增 Markdown 结构化分块：标题结构保留（如 rag_guide.md 从 1 块细分为 4 个标题块）
+  - 演示新增：
+    - 测试 0: 转换预览（xlsx→Markdown 表格 / pptx→标题分块 / docx→文本 / png→元数据回退）
+    - 测试 1: 新增 xlsx/pptx 样例入库（8 种文档类型全支持）
+    - 测试 5b: 表格/幻灯片内容检索（「如何减少幻觉」→ qa_records.xlsx）
+  - pyproject.toml 新增依赖 markitdown[all]>=0.1.7
+  - 验证：全部测试通过（exit code 0），8 文档 13 分块 8 类型
+
+[2026-08-09] 34. Token 级智能分块（chunk_paragraphs + 重叠保持信息连续性）
+  - 新增 estimate_tokens() 轻量 Token 估算：
+    - 中文按 1 字 ≈ 1 token，英文按 1 词 ≈ 每 4 字符 1 token（无分词器依赖）
+  - 新增 chunk_paragraphs(paragraphs, chunk_tokens, overlap_tokens) 核心函数：
+    - 元数据骨架：chunks / cur / cur_tokens / i
+    - 预处理：超长段落（> chunk_tokens）按句子边界拆分，单句仍超长时
+      按 token 预算二分硬切（_split_oversized_paragraph / _hard_split_by_tokens）
+    - 主循环：逐段累加进当前块，超出 chunk_tokens 时落块
+    - 重叠构建：从块尾部截取总 token ≤ overlap_tokens 的段落作为下一块前缀，
+      保持信息连续性（_build_overlap）
+    - 重叠收缩：重叠过多放不下新段时逐段收缩，保证不会死循环
+    - 返回块包含 chunk_index/content/tokens/paragraph_count/metadata
+  - TextSplitter 扩展双模式：
+    - 字符模式（默认 chunk_size/overlap）
+    - Token 模式（chunk_tokens/overlap_tokens 设置时启用，use_tokens 判定）
+    - split_paragraph_dicts() 统一段落 dict 分块入口
+  - RagTool 管线集成：
+    - config 支持 chunk_tokens/overlap_tokens
+    - _index_blocks 构建段落 dict（保留章节元数据）→ token 分块 → 向量化
+    - 块 metadata 记录 tokens/paragraph_count，添加结果展示分块模式
+  - 新增演示测试：
+    - 测试 5c: 7 段 → 6 块（chunk_tokens=60），每块 ≤ 60 token，
+      重叠验证：相邻块首尾共享段落 ✅
+    - 测试 5d: 管线集成（chunk_tokens=120, overlap_tokens=30）
+      rag_guide.md → 3 块（99/114/57 tokens），章节保留，检索正常
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 35. 文本 Token 近似估算（_approx_token_len + _is_cjk 全 CJK 覆盖）
+  - 新增 _is_cjk(ch) CJK 字符判定：
+    - 覆盖 CJK 统一汉字、扩展 A-E、兼容汉字全部 Unicode 区间
+  - 新增 _approx_token_len(text) 近似 Token 估算（中英文混合）：
+    - CJK 字符按 1 token 计算
+    - 其他字符按空白分词，每个词 1 token
+  - estimate_tokens() 重构为委托 _approx_token_len()，
+    全部分块管线（chunk_paragraphs / 硬切分二分）统一使用新估算器
+  - 演示新增（测试 5c 内）：
+    - 混合文本估算：'Hello world 你好世界' → 7 tokens，'RAG 检索增强生成' → 8 tokens
+    - CJK 扩展 B 区字符（𠀀𠀁）→ 2 CJK tokens（验证扩展区覆盖）
+    - token 分块在新估算器下仍 ≤ chunk_tokens（46/47/50/47/47）
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 36. 统一分块索引 index_chunks（百炼嵌入 API + TF-IDF 兜底）
+  - 新增 VectorEncoder 统一向量编码接口：
+    - encode(text) 返回 (稠密向量, TF 稀疏向量, 方法)
+    - 百炼嵌入 API（text-embedding-v3，带缓存）优先
+    - API 不可用/调用失败时自动回退 TF-IDF 稀疏向量
+    - embed_batch() 批量嵌入（一次请求多个文本，失败项回退）
+    - _tfidf_vectorize() TF 词频归一化稀疏向量
+  - 新增 index_chunks(chunks, embedding_client=None) 函数：
+    - 为每个 chunk 生成 embedding / tfidf_vector / vector_method / tokens
+    - method 标记实际使用的方法（"embedding" / "tfidf"）
+  - RagIndex 重构：
+    - 内部持有 VectorEncoder，embedding_available 委托统一接口
+    - add_chunk() 改用统一编码接口
+    - 新增批量 index_chunks(chunks) 方法：批量编码 + 写索引，
+      chunk.metadata 记录 vector_method / tokens
+  - 管线集成：_index_blocks 改为批量统一索引
+    （chunk_dicts → RagChunk 列表 → index_chunks → add_document）
+  - 演示新增（测试 5e）：
+    - 百炼 API 可用：3 块全部 method=embedding，向量 dims=1024，
+      TF-IDF 稀疏向量始终生成（17-21 个词项）
+    - TF-IDF 兜底：模拟 API 不可用 → method=tfidf，dense=None，tfidf_terms=8
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 37. 多查询扩展检索（MQE：LLM 扩展查询 + 单/批量模式调度）
+  - 新增 QueryExpander 类（MQE）：
+    1. 独立 LLM 调用生成扩展查询：
+       - MQE_SYSTEM_PROMPT + build_prompt()：检索查询扩展助手，
+         生成语义等价或互补的多样化查询，中文简短避免标点
+       - 独立于主对话的系统提示词（不改变主问答上下文）
+       - 扩展查询仅用于检索增强，不直接用于回答
+    2. 兜底机制：
+       - 只取前 n 个扩展（防止 LLM 生成过多）
+       - 未生成任何扩展 / LLM 不可用 / 调用失败 → 使用原始查询
+       - _parse_response() 按行解析 + 编号前缀清洗 + 去重保序
+    3. 模式调度（threshold / batch_size）：
+       - 查询总数 ≤ threshold → 单查询模式
+       - 查询总数 > threshold → 批量查询模式
+       - 数量太大时 iter_batches() 按 batch_size 分批处理
+  - RagTool 集成：
+    - 新增 search_mqe 动作：扩展查询 → 模式调度 → 分批检索 → 合并去重
+    - _retrieve_mqe() 检索核心：按 chunk 取最高分 + 多查询共识加成
+      （命中多个扩展查询的 chunk 加权，score × min(1.5, 1+0.15×(匹配数-1))）
+    - query 动作新增 mqe / n_queries 参数：MQE 增强问答（扩展仅用于检索）
+    - config 支持 mqe_threshold / mqe_batch_size
+  - 演示新增（测试 5f）：
+    - QueryExpander 真实调用：'RAG 检索增强生成的优势' → 4 个查询（原+3扩展）
+    - 兜底：LLM 不可用 → ['测试查询']；超量截断 → 只取前 3 个
+    - 模式调度：6 查询 > threshold=4 → batch 模式 2 批 [3,3]；
+      3 查询 ≤ threshold=10 → single 模式
+    - search_mqe：4 查询合并召回，命中 4 查询的块 score 提升至 1.0383
+    - query + mqe：Qwen 问答带 MQE 统计标注（4查询/单查询/1批）
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 38. 假设文档嵌入（HyDE）检索策略
+  - 新增 HydeGenerator 类（HyDE：Hypothetical Document Embeddings）：
+    1. 独立 LLM 调用生成假设文档：
+       - HYDE_SYSTEM_PROMPT + build_prompt()：根据问题先写一段可能的答案性
+         段落用于向量检索（不要分析过程），要求中等长度、客观、包含关键术语
+       - 独立于主对话的系统提示词（不改变主问答上下文）
+       - 假设文档仅用于检索增强，不直接用于回答
+    2. 兜底机制：LLM 不可用 / 调用失败 / 返回为空 → 回退使用原始查询
+    3. 检索流程：用户查询 → 生成假设文档 → 嵌入假设文档 → 用假设文档检索
+       （假设性答案与真实答案片段在向量空间更接近，提升召回质量）
+  - RagTool 集成：
+    - 新增 search_hyde 动作：展示假设文档 + 检索结果
+    - _retrieve_hyde() 检索核心：生成假设文档 → index.search（向量/混合检索）
+    - query 动作新增 hyde 参数：HyDE 增强问答（假设文档仅用于检索）
+    - config 支持 hyde LLM 客户端复用
+  - 演示新增（测试 5g）：
+    - HydeGenerator 真实调用：'RAG 相比传统微调的优势' → 生成含
+      RAG/微调/知识时效性/灾难性遗忘等关键术语的假设文档
+    - 兜底：LLM 返回空 → 回退原始查询（✅）
+    - search_hyde：'RAG 为什么能减少幻觉' → 假设文档 + 召回 3/13 块
+      （rag_guide.md「什么是 RAG」score=0.8128 排第一）
+    - query + hyde：Qwen 问答标注「| HyDE」，答案带 [1] 引用
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 39. 统一扩展检索框架（MQE + HyDE 整合，enable_mqe / enable_hyde）
+  - 新增 _retrieve_expanded() 统一扩展检索核心（参考 search_vectors_expanded）：
+    - 查询扩展：原始查询 + MQE 多样化查询 + HyDE 假设文档
+    - 去重修剪：过滤空项与重复项（保序）
+    - 候选池分配：pool = max(top_k × candidate_pool_multiplier, 20)，
+      每扩展查询 per = pool // len(expansions)
+    - 并行检索：ThreadPoolExecutor 对每个扩展查询独立执行向量检索
+    - 聚合合并：按 chunk_id 取最高分，分数降序返回 top-k
+  - 场景建议（enable_mqe / enable_hyde 按需组合）：
+    - 一般查询 → 启用 MQE
+    - 专业领域查询 → 同时启用 MQE + HyDE
+    - 性能敏感场景 → 基础检索或仅 MQE
+  - RagTool 集成：
+    - 新增 search_expanded 动作：enable_mqe / enable_hyde / mqe_expansions /
+      candidate_pool_multiplier 参数，展示策略/扩展查询/候选池/合并统计
+    - query 动作新增统一框架参数（enable_mqe / enable_hyde），
+      旧接口 mqe / hyde 保持兼容
+  - 演示新增（测试 5h）：
+    - 场景1（仅 MQE）：strategy=base+MQE，3 扩展查询，池 20，合并 8 → 返回 4
+    - 场景2（MQE+HyDE）：strategy=base+MQE+HyDE，4 扩展（含 HyDE 假设文档），
+      最佳 score=0.7831（rag_guide.md「什么是 RAG」）
+    - 场景3（基础检索）：strategy=base，1 查询，池 20，合并全部 13 候选
+    - query 统一框架：扩展检索[base+MQE+HyDE] 4查询/池20，答案带 [1] 引用
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-09] 40. 缓存层（SafeFullCache：LLM 查询结果 + 检索策略查询缓存）
+  - 新增 SafeFullCache 安全的全量缓存：
+    1. 自动淘汰冷数据（TTL 过期检查 + 定期清理 cleanup_interval）
+    2. 限制最大容量（内存保护，max_size 满时淘汰最早过期者）
+    3. 过期数据自动清理
+    4. 支持数据更新（update 保持一致性）+ get_or_set / clear
+    - stats()：size / max_size / hit_rate / hits / misses / expired_count
+  - 集成到 RAG 系统：
+    - QueryExpander（MQE）：扩展查询结果缓存（key: mqe:{query}:{n}），
+      相同查询直接命中，不再调用 LLM
+    - HydeGenerator（HyDE）：假设文档缓存（key: hyde:{query}）
+    - Qwen QA 答案缓存（key: qa:{question}:{top_k}:{策略}:{show_context}）
+    - 知识库变更（add_file/delete/clear）→ 缓存 clear() 失效（一致性）
+    - _stats 动作展示缓存统计（size/命中率/命中/未命中）
+    - config 支持 cache_max_size / cache_ttl
+  - 演示新增（测试 5i）：
+    - TTL：set 后 1.2s 过期返回 None（✅）
+    - 容量保护：max_size=3 写入 5 项 → size=3，最旧的 A 被淘汰
+    - 一致性：update 后 get → v2
+    - get_or_set：首次计算 1 次，二次命中缓存（compute 不再调用）
+    - MQE/HyDE 集成：二轮调用命中 +2 且未新增缓存项
+    - QA 答案缓存：相同问题二次查询回答一致且命中 +1
+  - 验证：全部测试通过（exit code 0），原有功能正常
+
+[2026-08-10] 41. 修复博查搜索（响应解析路径错误导致误回退 Tavily）
+  - 问题定位：博查 API 实际可用（HTTP 200 + code 200 + webPages.value 正常返回），
+    但 _search_bocha 按 data.webPages 解析，而真实结构为 data.data.webPages，
+    导致永远解析为空 → 误判失败 → 静默回退 Tavily
+  - 修复内容：
+    1. 解析路径修正：inner = data["data"] or data，再读 webPages
+    2. 新增业务码校验：code != 200 时打印 msg（便于排查余额/权限）
+    3. 补充 sys.path 引导（直接运行 python tools/advanced_search_tool.py 时
+       tools.tool_system 导入失败）
+  - 验证：使用博查搜索 → 共找到 3 条结果（CSDN 等真实结果），不再回退 Tavily，
+    双后端可用性检查通过（博查 ✅ / Tavily ✅），exit code 0
+
+[2026-08-10] 42. ContextBuilder 上下文构建器（ContextPacket + ContextConfig）
+  - 新增 tools/context_builder.py：
+  - ContextPacket 候选信息包（核心数据结构 1）：
+    - content 内容 / timestamp 时间戳（Unix 秒）/ token_count（None 自动估算）/
+      relevance_score 相关性（0.0-1.0）/ metadata 可选元数据
+  - ContextConfig 构建配置（核心数据结构 2）：
+    - max_tokens 最大 token / system_instruction_ratio 系统指令预留比例（0.0-1.0）/
+      min_relevance 最低相关性阈值 / enable_compression 压缩开关 /
+      recency_weight 新近性权重 + relevance_weight 相关性权重（和必须为 1.0）
+    - __post_init__ 校验：max_tokens>0、比例与阈值 0.0-1.0、
+      权重和 = 1.0（误差 1e-6，否则 ValueError）
+  - ContextBuilder 构建流程：
+    1. select() 最低相关性阈值筛选
+    2. rank() 综合评分 = relevance_weight×相关性 + recency_weight×新近度
+       （新近度按候选池时间范围线性归一化，未知视为最新）
+    3. build() 预算分配：系统指令预留 max_tokens×ratio，
+       按分数装入内容预算，超预算时 enable_compression 截断
+       （为后缀标记预留 token，严格 ≤ 预算）
+    4. 组装上下文（带相关度/新近度标注），build_text() 便捷拼接
+  - 演示验证：
+    - 权重和 0.8 ≠ 1.0 → ValueError 捕获 ✅
+    - min_relevance=0.3 过滤 6→4 包；新近包（MQE/缓存）评分反超
+      高分旧包（0.62 相关但 120h 前 → 新近度 0.0）✅
+    - max_tokens=200 系统预留 10%（20 tokens）→ 内容预算 180，实际 89 ✅
+    - 压缩：801 tokens → 146 tokens（预算 150，严格不超）✅
+    - min_relevance=0.5 → 仅 2 包入选 ✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 43. GSSC 流水线（Gather-Select-Structure-Compress）
+  - 新增 tools/gs_sc_pipeline.py，四阶段上下文构建：
+  1) Gatherer（Gather 多源汇集）：
+     - 参数：用户查询 / 对话历史 / 系统指令 / 自定义信息包 → 候选信息列表
+     - 系统指令最高优先级（metadata.priority=system），不参与评分，始终保留
+     - 分别从记忆系统（memory_search）与 RAG 系统（rag_search）检索相关记忆
+     - 对话历史保留最近 n 条（n<=5），可添加自定义信息包
+  2) Selector（Select 评分选择）：
+     - 参数：候选包 / 用户查询（计算相关性）/ 可用 token 数 → 选中包列表
+     - 分离系统指令并计算其 token 占用（始终保留）
+     - calculate_relevance()：关键词重叠算法（查询词在内容中的覆盖率），
+       低于阈值（relevance_threshold）过滤
+     - calculate_recency()：指数衰减模型，24h 内保持 1.0，之后 exp(-(age-24)/72)
+     - 加权组合（relevance_weight + recency_weight = 1.0），按分数降序填充
+       直到 token 上限
+  3) Structurer（Structure 结构化模板）：
+     - 参数：选中包 + 用户查询 → 结构化上下文字符串
+     - 模板：[Role & Policies]/[Task]/[State]/[Evidence]/[Context]/[Output]
+  4) Compressor（Compress 超限压缩）：
+     - 参数：原始上下文 + 最大 token 限制 → 压缩后上下文
+     - 仅 token > 90% 阈值（预留 10%）时压缩，优先保留
+       [Task]/[State]/[Evidence]，仍超限则 _truncate_text() 截断
+     - _count_tokens() 估算 token；截断为后缀标记预留预算（严格不超）
+  - GSSCPipeline.run() 端到端编排，返回 GSSCResult（上下文/sections/包/token/压缩标志）
+  - 演示验证：
+    - Gather：11 候选（system 1 + rag 2 + memory 3 + history 4 + custom 1）✅
+    - Select：system 始终保留；rag 包 score=0.657（rel=0.43, rec=1.0）✅
+    - Structure：六段模板完整生成 ✅
+    - Compress：正常上下文 162≤450 不压缩；超限 1418 → 225（≤250），
+      Task/State/Evidence 完整保留优先 ✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 44. GSSC 流水线集成缓存层（SafeFullCache）
+  - 复用 rag_tool.SafeFullCache，新增缓存工具函数：
+    - _fingerprint()：md5 指纹生成缓存键
+    - _packets_to_dicts() / _dicts_to_packets()：ContextPacket 序列化/恢复
+  - 各阶段集成（均支持 cache / cache_ttl 参数）：
+    - Gatherer：gather 结果缓存（key: gather:{指纹}），重复汇集跳过
+      RAG/记忆检索
+    - Selector：select 结果缓存（key: select:{查询+预算+候选指纹}）
+    - Structurer：structure sections 缓存（key: structure:{指纹}）
+    - Compressor：compress 结果缓存（key: compress:{max_tokens+文本指纹}）
+  - GSSCPipeline 端到端缓存：
+    - 自动创建共享缓存并注入各阶段（阶段无缓存时）
+    - run() 结果按输入指纹缓存（key: gssc:{指纹}），重复运行直接命中
+    - _result_to_dict / _result_from_dict 序列化 GSSCResult
+    - clear_cache() 清空（知识库/记忆变更时保证一致性）
+    - cache_stats() 缓存统计
+  - 演示验证（5b）：
+    - 重复运行：二轮命中缓存（命中 +1），结果一致（True）✅
+    - 缓存项：gather/select/structure/gssc 4 项，命中率 28.6% ✅
+    - clear_cache() 后 size=0（保证一致性）✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 45. 上下文构建监控日志（ContextMonitor）
+  - 新增 tools/context_monitor.py：记录每次上下文构建的统计信息，便于优化
+  - 记录字段：
+    - 基本信息：时间戳 / 查询 / 缓存命中标志
+    - 规模指标：gather_count 候选数、selected_count 选中数、gather_sources 来源分布
+    - token 指标：max_tokens 预算、tokens_used 实际使用、token_utilization 使用率、
+      system_tokens 系统指令占用
+    - 质量指标：avg_score / avg_relevance / avg_recency（选中包平均）
+    - 性能指标：stage_times_ms 各阶段耗时、total_time_ms 总耗时
+    - 压缩信息：compressed 标志
+  - 输出：JSONL 日志（默认 logs/context_monitor.jsonl）+ 内存环形缓冲（max_entries）
+  - 接口：record() / get_recent(n) / get_aggregate()（平均值/命中率/压缩率/来源分布）/ stats()
+  - GSSCPipeline 集成：
+    - 构造参数 monitor（未提供自动创建，默认落盘）
+    - run() 每次构建计时并记录统计（缓存命中路径也记录 cache_hit=True）
+    - _build_stats() 汇总统计字段
+  - 压缩硬保证：_truncate_text / context_builder._compress 增加微调循环，
+    严格 ≤ 预算（修复截断估算误差导致的 109% 超限）
+  - 演示验证（5c）：
+    - 缓存命中路径：耗时 0.0ms 记录 ✅
+    - 压缩构建：120/120（100%），阶段耗时 gather 391ms / compress 0.5ms ✅
+    - 聚合统计：4 条记录，平均选中 1.5，缓存命中率 50% ✅
+    - JSONL 落盘 logs/context_monitor.jsonl（4 条，write_failures=0）✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 46. NoteTool 结构化笔记工具（长时程任务外部记忆）
+  - 新增 tools/note_tool.py：Markdown + YAML Front Matter 混合格式存储，
+    每则笔记独立 .md 文件（默认 data/notes/），启动时重建索引
+  - 笔记元数据：id / title / type / tags / created_at / updated_at
+    唯一 id 格式：note_{时间戳}_{len(index)}
+  - 7 个操作：
+    1) create_note：标题/内容(Markdown)/类型(task_state/conclusion/blocker/
+       action/reference/general)/标签列表；build_markdown() 构建文件
+    2) read_note：按 id 读取并 parse_markdown() 分离 YAML 与正文；
+       内容缓存 60s，更新/删除清除对应缓存
+    3) update_note：title/content/note_type/tags 可选更新，刷新时间戳，
+       重构保存 + 更新索引，返回结果消息
+    4) search_notes：标题+内容关键词搜索，类型/标签过滤，
+       相关性+时间混合排序（0.7×rel + 0.3×rec，rec 指数衰减）；
+       仅热门搜索词（出现≥2次）缓存 60s，更新/删除清除相关搜索缓存
+    5) list_notes：元数据列表，类型/标签过滤，按更新时间降序，分页
+       （limit/offset），按参数组合缓存 15s，创建/更新/删除清空列表缓存
+    6) summary：按类型/标签统计 + 最近 n 条，返回 Dict
+       （total_notes/type_distribution/tag_distribution/recent_notes），
+       缓存 30s，创建/更新/删除清空
+    7) delete_note：删文件 + 移除索引 + 清除相关缓存
+  - 缓存复用 SafeFullCache，各操作独立 TTL（60/60/15/30s）
+  - 演示验证：
+    - 创建 4 类笔记，id 唯一（note_{ts}_{idx}）✅
+    - read 二次读取命中（hits=1）✅
+    - 搜索热门词缓存：第一次「关」→ 第二次「开」✅
+    - 列表/摘要二次调用命中（hits=1）✅
+    - 删除后四类缓存全部清空（一致性）✅
+    - 类型/标签过滤、分页、类型/标签统计全部正常 ✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 47. NoteTool × ContextBuilder 桥接（NoteContextBridge）
+  - 新增 tools/note_context_bridge.py：每轮对话前检索相关笔记并构建上下文
+  - NoteTool 新增 find_notes() 原始检索接口：
+    - 返回 (score, metadata, content) 列表（标题+内容关键词 + 时间混合评分）
+    - search_notes 重构为复用 find_notes（行为不变，回归通过）
+  - 类型加权相关性（blocker > action > conclusion）：
+    - TYPE_BOOST: blocker +0.25 > action +0.15 > conclusion +0.10 >
+      task_state +0.08 > reference +0.05 > general +0.0
+    - relevance_with_type()：基础相关性 + 类型加成（clamp 0-1）
+  - 避免上下文过载的双重限制：
+    - limit 参数限制笔记条数（默认 5，上限 20）
+    - ContextBuilder token 预算（默认 max_tokens=800）+ min_relevance 过滤
+  - 接口：
+    - retrieve()：检索 → ContextPacket（含类型加权相关性、时间戳、元数据）
+    - build()：检索 → ContextBuilder 构建（返回 tokens/budget/packets）
+    - prepare()：返回可直接拼入提示词的上下文文本（对话前注入）
+    - create_note / update_note / delete_note / summary 代理
+  - 演示验证：
+    - 类型加权：blocker 基础 0.358 + 0.25 = 0.608，反超更高基础分的
+      conclusion（0.475+0.10=0.575）✅
+    - retrieve limit=3 严格截断 ✅
+    - build 入选 3 条，tokens 93/800 ✅
+    - NoteTool 回归：search_notes 行为不变（exit 0）✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 48. TerminalTool 安全终端工具（命令执行 + 目录导航）
+  - 新增 tools/terminal_tool.py，四层安全机制：
+    1. 命令白名单：38 个只读命令（目录/文件读取/搜索/系统只读信息）
+    2. 工作目录沙箱：只能访问 workspace_root 及其子目录
+    3. 超时控制：默认 15s，可配置
+    4. 输出大小限制：默认 5000 字符，防内存溢出
+  - 强化校验：禁词黑名单（rm/mkdir/mv/pip/git push/powershell 等 60+ 项）
+    + 链式/重定向元字符（> < | ; & ` $(）直接拒绝
+    + 路径状参数沙箱检查（尽力而为）
+  - execute_command：
+    - cwd 参数感知（必须在沙箱内，否则拒绝）
+    - 捕获并合并 stderr（[stderr] 标记）
+    - 非零退出码标记警告
+    - 超时/异常妥善处理（智能体不中断）；部分输出同样截断
+    - cd 命令自动路由到 handle_cd
+  - handle_cd：
+    - 支持 cd -（上一个目录）/ ~ / ~/ / .. 特殊路径
+    - not allow_cd 或 cd 无参数 → 直接返回
+    - 沙箱检查（无法跳出工作目录）+ 目录存在性检查（结果缓存 30s）
+  - 执行统计：executed/rejected/timeout 计数 + status 动作
+  - 演示验证：
+    - 白名单/禁词/元字符全部拒绝（rm/mkdir/重定向/管道/git push/powershell）✅
+    - 只读命令执行成功（echo %cd%/dir/type），cwd 参数生效 ✅
+    - 非零退出码标记警告（type 不存在的文件）✅
+    - 超时：50MB 文件读取 1s 超时终止，39.7MB 部分输出截断 ✅
+    - 输出限制：7500 字符截断至 300 ✅
+    - cd sub → cd - → cd ~ 正常；cd .. / ../../.. / 绝对路径全部沙箱拒绝 ✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 49. SmartTerminal 协同终端（Terminal × Memory × Note × ContextBuilder）
+  - 新增 tools/smart_terminal.py：终端操作具备记忆与上下文感知
+  - 执行后自动沉淀：
+    - 记忆写入：每条命令 → MemoryTool 情景记忆（episodic，重要性分级：
+      失败/超时 0.8 > 拒绝 0.5 > 成功 0.4）
+    - 笔记沉淀：成功 → 会话 task_state 笔记（滚动最近 10 条）；
+      失败/超时 → blocker 笔记（滚动 10 条）
+    - 状态归类：_classify() 识别 success/failed/timeout/rejected
+      （含 cd 结果：❌ → failed，🚫 → rejected）
+  - 执行前上下文（build_context）：会话状态 + 命令历史 + 相关笔记
+    （NoteContextBridge 类型加权）+ 相关记忆（episodic/working），
+    全部经 ContextBuilder 组装（token 预算/相关性阈值/排序）
+  - 跨会话协作：新 SmartTerminal 实例可检索历史 blocker/task_state 笔记
+  - 接口：execute / cd / build_context / status / history_text
+  - 演示验证：
+    - 3 条成功命令 → 会话 task_state 笔记 + 7 条记忆 ✅
+    - 失败命令 → blocker 笔记（类型分布 task_state+blocker）✅
+    - 危险命令拒绝、cd 失败/沙箱拒绝正确归类 ✅
+    - build_context 174 tokens（会话状态+历史+笔记+记忆）✅
+    - 跨会话：新会话检索到 blocker 笔记（0.72 分，类型加权生效）✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 50. tools/ 目录重新分类（功能分组子文件夹）
+  - 将 tools/ 下 15 个 .py 按功能分组到子文件夹（各含 __init__.py）：
+    - tools/framework/   工具框架：tool_system.py（基类/注册）、tools.py（原始工具）、
+      tool_chain_manager.py、async_tool_executor.py
+    - tools/context/     上下文构建：context_builder.py、context_monitor.py、gs_sc_pipeline.py
+    - tools/memory/      记忆系统：memory_tool.py、note_tool.py、note_context_bridge.py
+    - tools/terminal/    终端工具：terminal_tool.py、smart_terminal.py
+    - tools/search/      搜索工具：advanced_search_tool.py、search_registry.py
+    - tools/rag/         RAG：rag_tool.py
+  - 同步修改：
+    - 全部 .py（agents + tools）的跨模块导入更新为
+      from tools.<分组>.<模块> import ...（15 组映射）
+    - 移动后模块的 sys.path 引导与默认目录计算多上一级
+      （os.path.dirname×2 → ×3，指向项目根）
+    - 清理 tools/__pycache__ 残留
+  - 验证：
+    - 21/21 模块导入成功（含 agents 6 个 + tools 15 个）✅
+    - 演示回归：context_builder / note_tool / smart_terminal 均 exit 0 ✅
+    - 默认目录定位正确：data/notes、logs/context_monitor.jsonl、
+      终端沙箱均指向项目根 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-10] 51. Agent 统一执行框架（BaseAgent + AgentRegistry + AgentFactory）
+  - 新增 agents/agent_framework.py：
+  1) BaseAgent(ABC) 统一执行接口：
+     - execute()：执行 Agent 主逻辑，返回统一 AgentResult
+       （output/metadata/status/iterations/error/extra，异常容错不崩溃）
+     - metadata()：返回 AgentMeta 元信息（name/description/version/
+       agent_type/model/tools/capabilities/created_at）
+     - _execute()：抽象方法，子类实现主逻辑
+     - AgentAdapter：将已有 Agent（run/chat 接口）包装为 BaseAgent，
+       无需修改原 Agent 即可接入统一框架
+  2) AgentRegistry 实例注册表：
+     - register/unregister/get/list_agents/list_metadata/execute/count/clear
+     - 未注册名称执行返回 error 结果（容错）
+  3) AgentFactory 类型工厂：
+     - register(类型→类)/unregister/create/create_all/available_types
+     - 未知类型抛 KeyError 并列出可用类型
+  - 演示验证：
+    - 工厂创建 echo/reverse 两类 Agent，统一 execute 返回结果+元信息 ✅
+    - Registry 注册/查询/执行，未注册容错（error 状态）✅
+    - 主逻辑抛异常 → AgentResult(status=error)，智能体不崩溃 ✅
+    - AgentAdapter 包装 LegacyAgent（chat 接口）直接接入 ✅
+    - 真实 SimpleAgent 经工厂+适配器创建（未触发 LLM 调用）✅
+  - 验证：全部演示通过（exit code 0）
+
+[2026-08-10] 52. run.py Agent 启动器（运行文件）
+  - 新增项目根目录 run.py：激活并运行 Agent（基于统一框架）
+  - 用法：
+    - python run.py                    交互式会话（激活默认 Agent）
+    - python run.py "问题"             单次执行
+    - python run.py --type react "问题" 指定类型执行
+    - python run.py --list             列出可用 Agent 类型
+    - python run.py --demo             演示模式（无 LLM）
+  - 功能：
+    - 注册 8 种类型：simple/react/reflection/plan_and_solve/function_call/
+      tree_of_thought（真实 Agent 懒加载适配器）+ echo/reverse（无 LLM 演示）
+    - 自动检测 LLM 配置（LLM_MODEL_ID/LLM_API_KEY/LLM_BASE_URL），
+      未配置时自动降级为演示模式（运行文件始终可用）
+    - 交互 REPL：/help /agents /type <名称> /status /exit
+    - 统一接口执行：factory.create → registry.register → agent.execute（AgentResult）
+  - 验证：
+    - --list 正常列出类型与默认标记（simple ✅）✅
+    - --demo 单次执行：echo 返回 [回声] ✅
+    - REPL 管道输入：回答 + /exit 退出（exit 0）✅
+    - 真实 LLM 激活：python run.py --type simple "..." →
+      SimpleAgent 经统一框架返回 RAG 介绍 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-10] 53. Agent 智能路由模式（AgentRouter + run.py --auto）
+  - 新增 agents/agent_router.py：根据用户请求自动选择最合适的 Agent 类型
+  - 两级路由策略：
+    1. LLM 分类路由（准确）：调用 LLM 分类请求 → 解析 agent_type
+       （容错解析：直接匹配/文本查找，失败自动回退）
+    2. 关键词规则路由（快速，无 LLM）：6 条规则覆盖
+       plan_and_solve / tree_of_thought / reflection / react /
+       function_call / simple（simple 作为低优先兜底置后，
+       平局按规则顺序靠前胜出，命中越多置信度越高 0.6-0.95）
+    3. 兜底：未命中 → 默认类型（simple/echo）
+  - RouteDecision：agent_type / method(llm|keyword|fallback) / confidence / reason
+  - run.py 集成 --auto：
+    - 单次：python run.py --auto "问题"（路由→自动激活→执行，显示决策）
+    - REPL：/auto 切换智能路由（提示符显示 [agent|auto]），
+      路由目标未注册时自动回退默认类型
+  - run.py 真实 Agent 包装重构：按各自构造函数独立构建
+    （ReAct 无 name 参数；PlanAndSolve/FunctionCall 需先建 practiceLLM）
+  - 演示验证：
+    - 关键词路由：规划→plan_and_solve(0.90)、搜索→function_call(0.75)、
+      反思→reflection(0.90)、推理→react(0.75)、闲聊→simple ✅
+    - LLM 路由：规划请求→plan_and_solve、计算请求→function_call ✅
+    - 真实链路：run.py --auto "规划三步骤计划" → LLM 路由 plan_and_solve
+      → 激活 → 规划 3 步 → 执行至步骤 3/3（exit 0）✅
+    - REPL /auto 切换、demo 模式回退 echo ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 54. ToolResponse 协议 + CircuitBreaker 熔断器
+  - 新增 tools/framework/tool_response.py（ToolResponse 协议）：
+    - 结构化返回：status(success/error/warning) / output / data / error /
+      duration_ms / extra
+    - 便捷构造：success() / warning() / error()；属性 ok / is_error
+    - 兼容旧接口：str(ToolResponse) == output（Tool.run() 字符串返回不受影响）
+  - 新增 tools/framework/circuit_breaker.py（熔断器）：
+    - 三态模型：CLOSED →（连续失败达阈值）→ OPEN →（恢复时间后）→
+      HALF_OPEN →（成功达阈值）→ CLOSED /（任一失败）→ OPEN
+    - call()：异常式调用保护（OPEN 快速失败抛 CircuitOpenError）
+    - check() + record_success()/record_failure()：显式门控模式
+      （适用于调用不抛异常但返回失败结果的场景，如 ToolResponse）
+    - circuit_breaker 装饰器；status() / reset() / stats
+  - tool_system.py 集成：
+    - Tool.execute(args) → ToolResponse（计时 + 异常归一化）
+    - FunctionTool.execute 覆盖：直接返回带 data 的结构化结果
+    - ToolRegistry：execute() 旧接口兼容（返回 str），新增
+      execute_structured() → ToolResponse；按工具名独立熔断
+      （enable_circuit_breaker / failure_threshold / recovery_timeout）
+    - 错误响应计为失败（record_failure），成功计为成功（record_success）
+    - circuit_status() / circuit_reset()
+  - 演示验证：
+    - ToolResponse：success/data/error/warning、str 兼容 ✅
+    - 熔断器：2 次失败→open→快速失败→半开试探成功→closed ✅
+    - Registry 集成：3 次失败→circuit_open 快速失败→旧接口兼容→reset ✅
+    - FunctionTool divide 除零 → error 结构化返回 ✅
+    - 回归：25/25 模块导入成功，terminal_tool 演示 exit 0 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 55. Agent 级 TraceLogger（执行轨迹可观测性）
+  - 新增 agents/agent_trace.py：
+    - TraceEvent：单事件（llm/tool/step，输入输出摘要/耗时/状态/错误）
+    - AgentTrace：一次执行的完整轨迹（生命周期/耗时/LLM与工具调用计数/
+      failure_chain() 失败链）
+    - TraceLogger：
+      - start()/finish()/log_event()/log_current() + active() 上下文
+      - JSONL 落盘（logs/agent_trace.jsonl）+ 内存环形缓冲（200 条）
+      - get_trace()/get_recent()/get_aggregate()（成功率/平均耗时/调用统计/失败链）
+      - install_llm_hook()：包装 practiceLLM.invoke/think 自动记录 LLM 事件
+      - tool_observer()：生成 ToolRegistry observer（自动记录工具事件）
+      - set_default()/get_default()：全局默认（BaseAgent 自动使用）
+  - BaseAgent 集成：execute() 自动 start/finish trace（实例级 tracer 或全局
+    默认），_execute 期间为活动 trace（LLM Hook/工具 Observer 自动归入）
+  - ToolRegistry 集成：新增 observer 参数（name, args, ToolResponse），
+    观察者异常不影响工具执行
+  - 修复 ToolResponse 字段与同名工厂方法冲突：__post_init__ 归一化 error
+    （dataclass 将类方法当作字段默认值 → 绑定方法，导致 JSON 序列化失败）
+  - 演示验证：
+    - LLM Hook：deepseek 调用 1 次（1628ms）记录 ✅
+    - 工具事件：成功 + 失败各记录，失败链提取 ✅
+    - 聚合统计 + JSONL 落盘（3 个事件）✅
+    - 真实 SimpleAgent：execute() 自动轨迹（1 次 LLM 事件，2588ms）✅
+    - 回归：23/23 模块导入 + tool_system/run.py 演示 exit 0 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 56. 会话持久化（SessionStore + run.py --session）
+  - 新增 agents/session_store.py（SQLite 单文件存储，默认 data/sessions.db）：
+    - 两张表：sessions（会话元信息）+ messages（消息历史，索引按会话）
+    - 完整 CRUD：create_session/get_session/list_sessions/delete_session/clear
+    - 消息：append_message/get_messages（按会话恢复/按角色过滤/取最近 N 条）/
+      count_messages/trim_messages（防无限增长）
+    - 线程安全（每操作独立连接）；stats() 统计
+  - BaseAgent 集成：
+    - __init__ 新增 session_store/session_id 参数
+    - execute() 自动持久化：每轮对话保存 user/assistant（失败时
+      assistant 记为 [status] error + extra）
+    - restore_history()：从存储恢复消息历史（供注入上下文）
+  - AgentAdapter 集成：构造时自动将持久化历史恢复到被包装 Agent 的
+    _history（SimpleAgent 等断点续聊），失败不阻断
+  - run.py 集成：
+    - --session <id>：指定/复用会话；启动时显示恢复的消息数
+    - REPL 显示当前会话；新增 /sessions 命令列出历史会话
+  - 演示验证：
+    - SessionStore 独立：创建/追加/恢复/续聊/裁剪/删除 全部正常 ✅
+    - run.py --demo --session test_s1 两次运行：第 2 次恢复历史 2 条 ✅
+    - 真实 LLM 断点续聊：--session demo_01 两次提问，第 2 次 SimpleAgent
+      回答"我刚才已经做个简短的自我介绍啦"（历史已恢复）✅
+    - data/sessions.db：2 会话 8 条消息 ✅
+    - 回归：11/11 模块导入成功 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 57. SSE 流式输出（core/streaming.py + run.py --stream）
+  - core/llm.py 新增 practiceLLM.stream_chunks()：流式文本块生成器
+    （不打印，供 SSE 使用）
+  - 新增 core/streaming.py：
+    - SSEEvent：事件模型（event/data/id），format() 输出 SSE 线路格式
+      （event: x\ndata: y\n\n），JSON 序列化 data
+    - format_sse()：便捷格式化函数
+    - stream_agent()：Agent → SSE 事件流生成器
+      （meta → delta×N（token 级）或 result（fallback）→ done/error）
+    - SSEClientStream：可直接作为 HTTP body 的迭代器
+      （media_type=text/event-stream，兼容 FastAPI/Starlette/标准 http.server）
+  - BaseAgent 集成：stream() 方法（子类实现 _stream() 生成器 → token 级
+    delta；否则回退单条 result，静默 Agent 自身控制台打印）
+  - run.py 集成：
+    - --stream "问题"：SSE 流式单次执行（逐块打印 delta/result + 耗时）
+    - 新增 stream 类型：StreamAgent（token 级实时输出）
+  - 演示验证：
+    - 事件流：meta + 39 帧（delta 逐 token）+ done ✅
+    - HTTP SSE 服务器（ThreadingHTTPServer）：200 / text/event-stream /
+      53 帧 / 51 个 delta / done，urllib 客户端成功消费 ✅
+    - run.py --stream --type stream：token 级实时输出（2778ms）✅
+    - run.py --stream 默认 simple：非流式回退单条 result（2309ms）✅
+    - 导入回归 4/4 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 58. 子代理委派 + 工具过滤（SubAgentTool + ToolFilter）
+  - 新增 tools/framework/tool_filter.py（工具过滤）：
+    - ToolPolicy：角色策略（allow 白名单 / deny 黑名单）
+    - ToolFilter：set_policy/allow/deny/allow_all/remove_policy
+    - 语义：无策略默认全允许；allow=None 仅受 deny 限制；allow 白名单优先；
+      通配符 "*" 允许全部；deny 优先于 allow
+    - is_allowed/get_visible/describe（带拒绝原因）/stats
+  - 新增 tools/framework/sub_agent_tool.py（子代理委派）：
+    - SubAgentTool(factory)：以工具形式暴露委派能力
+      （参数 task + agent_type，默认 simple）
+    - 深度保护：threading.local 嵌套计数，超过 max_depth（默认 3）拒绝，
+      防止无限互相委派死循环
+    - 未知类型报错并列出可用类型；execute() 结构化识别失败为 error
+  - ToolRegistry 集成：
+    - 新增 owner + tool_filter 参数：execute_structured 按角色校验权限
+      （拒绝返回 error=agent_forbidden: role.tool）
+    - list_tools(owner=None) 返回角色可见的工具视图
+  - 演示验证：
+    - ToolFilter：writer 白名单 / readonly 黑名单 / analyst 全允许，
+      可见工具 + describe 拒绝原因 + 关键判定全部正确 ✅
+    - SubAgentTool：委派成功（[子代理 echo_sub]...）、未知类型报错、
+      嵌套深度保护（3 层后拒绝）✅
+    - 集成：writer 角色仅见 Calculator，调用 SubAgent 被拒
+      （agent_forbidden），admin 角色全可见 ✅
+    - 回归：12/12 模块导入成功 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 59. Skills 知识外化系统（SkillLoader + SkillTool + 内置技能）
+  - 新增 skills/ 包：
+    - loader.py：Skill 数据模型 + SkillLoader
+      - 技能包格式：skills/builtin/<name>/SKILL.md
+        （--- front-matter：name/description/version/tags + Markdown 正文）
+      - discover()/load()/list_skills()/activate()/deactivate()
+      - build_context(names)：拼接技能正文为可注入提示词块
+      - inject(system_prompt, names)：注入系统提示词末尾
+      - front-matter 解析：键值对 + 行内列表 + 布尔/数字转换
+    - skill_tool.py：SkillTool（Agent 运行时调用技能）
+      - 动作：list / use <name> / context [names] / activate / deactivate
+      - 未找到技能/未知动作 → 结构化 error
+  - 内置技能（skills/builtin/）：
+    - code_review：四维代码审查方法论（正确性/健壮性/可读性/性能 +
+      【发现:严重程度】输出模板）
+    - rag_practice：RAG 实践（分块/嵌入/混合检索/重排/评测参数）
+  - 演示验证：
+    - 发现 2 个技能，front-matter 解析正确（标签/版本）✅
+    - build_context 拼接 943 字符，inject 注入系统提示词 ✅
+    - activate/deactivate 管理，停用技能被排除 ✅
+    - SkillTool：list/use/context/错误处理全部正常 ✅
+    - 端到端：inject(code_review) + 真实 LLM 审查代码 → 严格遵循
+      【发现:High】【发现:Medium】模板输出 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-11] 60. 工程化补齐（tests / docs / examples）
+  - tests/：51 个 pytest 用例（0.77s，无网络依赖）
+    - test_tool_response：协议/兼容/FunctionTool/Registry（10）
+    - test_circuit_breaker：三态状态机/显式门控/装饰器（8）
+    - test_tool_filter：白名单/黑名单/通配符/Registry 集成（8）
+    - test_session_store：CRUD/断点续聊/裁剪/删除（8）
+    - test_agent_framework：执行/容错/工厂/适配器/持久化/流式回退（6）
+    - test_agent_trace：生命周期/失败链/JSONL/自动轨迹/环形缓冲（9）
+    - test_skill_loader：发现/解析/注入/启停（7）
+    - conftest.py：项目根目录 sys.path
+  - 修复：TraceLogger 环形缓冲下限钳制 max(1, n)（原 max(10, n) 导致
+    小容量配置失效）
+  - docs/：README（总览+快速开始）、architecture（分层架构+数据流+
+    设计决策）、usage（run.py 全模式）
+  - examples/：5 个可运行示例
+    - 01_agent_framework / 02_tools（Response+熔断+过滤+子代理）/
+      03_session_and_trace / 04_skills / 05_streaming（HTTP SSE）
+    - examples/README 索引
+  - pyproject.toml：dev 可选依赖 pytest + pytest 配置（testpaths/addopts）
+  - 验证：
+    - pytest：51 passed（0.77s）✅
+    - 5 个示例全部运行 exit 0（02 演示过滤拦截 agent_forbidden）✅
+    - 05_streaming HTTP 冒烟：200 / 35 帧 / done ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 61. build_all_tools_registry 一键装配工厂
+  - 新增 tools/framework/registry_factory.py：
+    - build_all_tools_registry(agent_factory, tool_filter, owner,
+      enable_circuit_breaker, include) → ToolRegistryBundle
+      - 8 个工具分组：basic(4)/terminal/search/memory/note/rag/skill/
+        subagent（需 agent_factory，缺失自动跳过并记录失败）
+      - 单分组失败不影响整体（try/except + failures 收集）
+    - build_role_tool_filter()：默认角色策略
+      （analyst 全部 / writer 知识写作类 / readonly 禁用终端与子代理）
+    - describe_bundle()：装配清单输出
+  - 验证：
+    - 全量装配 11 个工具、0 失败：
+      Calculator/Time/Search/Weekday/TerminalTool/AdvancedSearch/
+      MemoryTool/NoteTool/RagTool/Skill/SubAgent ✅
+    - 角色裁剪：analyst 11 / writer 8 / readonly 9 / 无策略 11 ✅
+    - 实际执行：Calculator 126、Weekday 星期三、SubAgent 委派、
+      Skill.list 全部成功 ✅
+    - 新增 6 个单元测试（全量/子集/缺失 factory/角色视图/执行/描述）✅
+    - 全量测试：57 passed（1.90s）✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 62. FunctionCallAgent 切换到新工具框架（全量装配 + 角色过滤）
+  - 背景：项目存在新旧两套工具框架（tools.py 旧 / tool_system.py 新），
+    真实 Agent 仍用旧框架，11 个新工具/熔断/过滤/可观测性未对 Agent 生效
+  - 改动：
+    - tool_system.py：Tool 基类新增 run_with_args() 旧框架兼容桥
+      （OpenAI function calling 参数字典 → run(args)）
+    - ToolRegistry 新增 get_tools(owner=None)：返回可见工具对象列表
+    - function_call_agent.py：双接口适配
+      - _convert_tools_to_openai_format 优先 tool.to_openai_format()，
+        旧工具回退 tool.parameters
+      - _execute_function 新框架走 execute()（ToolResponse 结构化，异常归一化），
+        旧框架走 run_with_args()
+    - run.py FunctionCallAgentWrapper：改用 build_all_tools_registry
+      + build_role_tool_filter(analyst)，10 个工具（SubAgent 因无
+      factory 自动跳过并警告）
+  - 验证：
+    - 兼容桥：run_with_args({'expression': '(15+27)*3'}) → 126 ✅
+    - analyst 角色视图 10 个工具、均带 execute() ✅
+    - 真实 LLM 冒烟：`--type function_call "现在几点了？+计算(15+27)*3"`
+      → 调用 Time + Calculator 两个新框架工具，回答正确 ✅
+    - 全量测试：57 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 63. 选工具质量观察 + 双协议兼容修复
+  - 观察（8 轮真实对话，10 工具）：
+    - 选型准确率 8/8：计算/时间/技能/记忆/终端/混合/联网/纯聊天
+      首轮工具选择全部正确，纯聊天不误调工具 ✅
+    - 发现 2 个真实缺陷：
+      a) TerminalTool/NoteTool/RagTool/MemoryTool 定义了旧签名
+         execute(action: str, **kwargs)，遮蔽基类 execute(args) → ToolResponse，
+         新协议调用时参数字典被绑成 action 后 .lower() 崩溃
+      b) Calculator 描述未提示幂运算用 **，LLM 用 5^3（位异或）导致
+         BitXor 错误
+    - 观察：联网问题 LLM 反复重试（5 次调用，含混入旧 Search），
+      属结果不满意时的重试行为，需后续观察
+  - 修复：
+    - tool_system.py 新增 dual_protocol_execute() 双协议适配器
+      （dict → Tool.execute 新协议；str → 组装 {"action": ...} 委托 run 旧协议）
+    - 4 个工具 execute 改为委托适配器（新旧协议同时可用）
+    - CalculatorTool 描述追加"幂运算请用 **，不要用 ^"
+  - 验证：
+    - 双协议：Terminal/Memory/Note/Rag 新旧调用方式均正常 ✅
+    - 复测 3 个失败问题：记忆（Time+MemoryTool 成功）、终端
+      （TerminalTool 列出目录）、混合（Time+Calculator → 5³=125）✅
+    - 全量测试：57 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 64. 联网重试问题修复：双层防重试机制
+  - 背景：观察发现 AdvancedSearch 失败时 LLM 反复重试（5 次调用，
+    含混入旧 Search 工具），浪费 token 且无意义
+  - 工具层修复（AdvancedSearchTool）：
+    - 新增 _consecutive_failures 连续失败计数器 + _last_failure_time 时间戳
+    - 连续失败 max_consecutive_failures（默认 2）次后返回终端错误：
+      "【搜索不可用】所有搜索后端均不可用，连续失败 N 次。请勿重试。"
+      明确告知 LLM 不要重试
+    - reset_interval（默认 60s）后自动恢复计数器，允许后续重试
+    - 成功时自动重置计数器
+    - 工具描述追加"注意：如果返回错误消息以【搜索不可用】开头，
+      说明搜索后端已全部不可用，请勿重试"
+  - Agent 层修复（FunctionCallAgent）：
+    - 新增 _tool_failures 字典跟踪各工具连续失败次数
+    - 新增 _disabled_tools 字典记录被禁用的工具名 + 时间戳
+    - 同工具连续失败 max_tool_failures（默认 3）次后自动禁用
+    - 终端错误信号（如"【搜索不可用】"）匹配后立即禁用，不受阈值限制
+    - 禁用持续 tool_reset_interval（默认 120s）后自动恢复
+    - 禁用工具从 OpenAI function schema 中移除，LLM 无法再调用
+    - _convert_tools_to_openai_format 每次调用前检查并恢复过期禁用
+  - 新增测试：test_throttle.py（9 个用例，覆盖工具节流/Agent 禁用/
+    终端错误立即禁用/成功重置/自动恢复/描述更新）
+  - 验证：全量 66 passed（新增 9 个 throttle 用例）✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 65. 全部工具 description 增加适用/不适用场景指引
+  - 背景：LLM 选工具只能看到各工具的 description 属性，此前多数工具
+    只有功能概述，缺少"何时用/何时不用"信息，易误调工具
+  - 改动：为全部 11 个工具 description 追加统一格式的
+    "适用：...。不适用：...（请用 X 工具）。注意：..." 指引：
+    - Calculator：不适用外部实时数据计算（→AdvancedSearch）
+    - Time：不适用时区换算/星期查询（→Weekday）
+    - Search：明确为演示工具，真实搜索→AdvancedSearch
+    - Weekday：不适用具体日期时间（→Time）
+    - AdvancedSearch：不适用私有数据/本地知识库（→RagTool）
+    - TerminalTool：不适用修改类操作（会被拒绝）
+    - MemoryTool：不适用长文档/结构化笔记（→NoteTool）
+    - NoteTool：不适用短期记忆（→MemoryTool）/大规模问答（→RagTool）
+    - RagTool：不适用实时搜索（→AdvancedSearch）
+    - Skill：不适用实时搜索/记忆管理
+    - SubAgent：不适用简单任务/需共享上下文的任务
+  - 验证：10 个类工具 + Weekday 均含适用/不适用字段 ✅
+  - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-12] 66. 选工具质量复测（description 指引生效验证）
+  - 复测 7 类场景（真实 LLM，10 工具，analyst 角色）：
+    - 纯计算 → Calculator ✅
+    - 时间   → Time + Weekday（同时调用，回答整合正确）
+    - 星期   → Weekday ✅（新指引生效，不再用 Time）
+    - 混合   → Time + Calculator ✅（首轮并行选对）
+    - 纯聊天 → 不调工具 ✅
+    - 联网   → AdvancedSearch ×4 + Time ⚠️（4 次均为
+      AdvancedSearch，未再混入旧 Search；多次是换 query 重搜，
+      属"结果不满意换词重搜"，非失败重试）
+    - 终端   → TerminalTool ✅
+  - 结论：
+    - 7/7 场景工具选择正确，首轮选型 100% 正确 ✅
+    - 对比第 63 轮观察：联网场景不再混入旧 Search，
+      Weekday 被正确使用，description 指引生效 ✅
+    - 遗留观察：联网场景单任务最多搜 4 次（换词重搜），
+      可考虑在描述中限制单任务搜索次数（后续优化）
+  - 验证：全部通过（exit code 0）
+
+[2026-08-13] 67. SimpleAgent 迁移到新框架 ToolRegistry（消除重复定义）
+  - 背景：项目存在两套 ToolRegistry——旧版内联在 agents/simple_agent.py
+    （仅 SimpleAgent 自用），新版在 tools/framework/tool_system.py
+    （全项目标准）。旧版为历史遗留，未随第 62 步迁移
+  - 改动：
+    - simple_agent.py 删除内联旧 ToolRegistry 类，改从
+      tools.framework.tool_system 导入新框架 ToolRegistry
+    - 新增 _LegacyToolAdapter：旧框架工具（tools.py 的 Tool，
+      run 接受字符串）→ 新框架 Tool 的兼容适配器
+      （parameters schema 转换 + 执行委托 run_with_args），
+      保证 DEFAULT_TOOLS 演示工具仍可注册
+    - __init__/add_tool：工具逐个注册，非新框架工具自动适配包装
+    - _execute_tool_call：统一走 registry.execute_structured()
+      （熔断器 + 参数校验 + ToolResponse 协议），不再直调 tool.run
+    - _parse_tool_parameters：无 key=value 时按工具参数 schema
+      推断第一个参数名（如 Time → format），替代固定 input 推断
+    - 新增 _get_tool（大小写不敏感，兼容 LLM 输出差异）与
+      _first_param_name 辅助方法
+  - 验证：
+    - 冒烟 15 项：旧工具注册/适配器/参数推断/大小写不敏感/
+      新旧框架工具执行/remove 全部通过 ✅
+    - 端到端 mock LLM：注册→[TOOL_CALL]解析→执行→回答 全链路 ✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-13] 68. 彻底消灭旧工具框架（删除 tools/framework/tools.py）
+  - 背景：第 67 步迁移后仍保留旧框架 tools.py 作为兼容层；
+    本步彻底删除，全项目统一使用 tools/framework/tool_system
+  - 改动：
+    - 删除 tools/framework/tools.py（旧 Tool 基类 + CalculatorTool/
+      TimeTool + DEFAULT_TOOLS）
+    - ReAct_agent.py：改用 tool_system 的 Tool/CalculatorTool/TimeTool；
+      _execute_tool 适配新协议（字符串参数 → dict + ToolResponse），
+      新增 _get_tool 大小写不敏感查找、_parse_input 参数推断
+    - function_call_agent.py：__main__ 演示改用新框架工具
+    - simple_agent.py：删除 _LegacyToolAdapter 与适配包装逻辑，
+      __main__ 演示改用新框架工具；add_tool 直接注册
+  - 验证：
+    - 冒烟 8 项：SimpleAgent/ReActAgent 用新框架工具端到端执行、
+      参数推断、大小写兼容、execute 协议全部通过 ✅
+    - 全量模块导入（agents/tools/skills 13 个模块）成功 ✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-13] 69. Message 类重构到 agent_framework（统一消息模型）
+  - 背景：Message 类原定义在 agents/simple_agent.py，却被
+    agent_framework.py 的 AgentAdapter 跨文件引用（断点续聊重建历史），
+    属"框架反向依赖具体 Agent 实现类"的轻微耦合
+  - 改动：
+    - agent_framework.py 新增统一 Message 类（content/role），
+      置于 AgentMeta/AgentResult 旁的数据结构区
+    - _restore_wrapped_history 改为直接使用本地 Message，
+      移除对 simple_agent 的条件导入（消除框架→具体 Agent 依赖）
+    - simple_agent.py 删除本地 Message 定义，
+      改为 from agents.agent_framework import Message
+  - 验证：
+    - 无循环导入（agent_framework 不再引用 simple_agent）✅
+    - 冒烟 6 项：定义位置/SimpleAgent 使用/无本地定义/
+      AgentAdapter 会话恢复全部通过 ✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-14] 70. SimpleAgent 依赖注入改造 + LLM 协议抽象
+  - 背景：SimpleAgent/ReActAgent 早期内部构造 practiceLLM（绑定具体类），
+    与 FunctionCall/PlanAndSolve 的注入风格不一致；且无法脱离
+    API Key 做单元测试（此前测试需 __new__ 绕过构造）
+  - 改动：
+    - core/llm.py 新增 LLMClient Protocol（runtime_checkable）：
+      model/invoke/think/stream_chunks 统一接口，实现依赖倒置
+    - simple_agent.py __init__ 增加 llm 注入点：
+      self.llm = llm or practiceLLM(...)——注入优先，
+      未注入回退内部构造（model/apiKey/baseUrl/timeout 保留兼容旧调用）
+    - 其余方法零改动（工具执行已走 execute_structured 治理）
+  - 验证：
+    - mock 注入直接实例化（无需 API Key）✅
+    - 注入 mock 端到端工具执行（[TOOL_CALL] 全链路）✅
+    - practiceLLM 与 mock 均满足 LLMClient 协议（isinstance 检查）✅
+    - __init__ 保留 model/apiKey/baseUrl/timeout 兼容参数 ✅
+    - 注入真实 practiceLLM ✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-14] 71. ReActAgent 与 run.py Wrapper 显式注入（注入风格统一）
+  - 背景：第 70 步 SimpleAgent 已注入式；ReActAgent 仍内部构造，
+    run.py 的 SimpleAgentWrapper/ReActAgentWrapper 也未显式注入
+  - 改动：
+    - ReAct_agent.py：__init__ 增加 llm 注入点（Optional[LLMClient]），
+      self.llm = llm or practiceLLM(...)，保留 model/apiKey/baseUrl/timeout
+      兼容参数（旧调用不变）
+    - run.py：SimpleAgentWrapper 改为 SimpleAgent(name, llm=practiceLLM())；
+      ReActAgentWrapper 改为 ReActAgent(llm=practiceLLM())——与
+      FunctionCallAgentWrapper/PlanAndSolveAgentWrapper 风格一致
+  - 验证：
+    - ReActAgent mock 注入直接实例化（无需 API Key）✅
+    - ReActAgent 注入 mock 端到端（Thought/Action/Finish 全链路）✅
+    - 两个 Wrapper 显式注入 llm（patch 验证）✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+[2026-08-14] 72. 三个 Agent 工具管理统一到 ToolRegistry（消除手写 dict）
+  - 背景：SimpleAgent 用 ToolRegistry 门面，但 ReActAgent 手写
+    tool_map dict、FunctionCallAgent 手写 self.tools dict，
+    三套工具管理方式不一致，且后两者绕过熔断/过滤/校验
+  - 改动：
+    - tool_system.py：ToolRegistry 新增 find_tool(name, case_insensitive=True)，
+      大小写不敏感查找下沉到工具系统（LLM 输出大小写不可控）
+    - function_call_agent.py：self.tools dict → self.tool_registry；
+      _execute_function 统一走 execute_structured（获得熔断保护）；
+      add/remove/list/get_tool 全部委托 registry；清理重复 import
+    - ReAct_agent.py：tool_map dict → self.tool_registry；
+      _get_tool 用 find_tool；_execute_tool 统一走 execute_structured
+    - simple_agent.py：_get_tool 复用 find_tool（逻辑上移，门面保留）
+  - 验证：
+    - find_tool 大小写不敏感/精确优先/敏感模式 3 项 ✅
+    - FunctionCallAgent add/remove/list/get_tool/openai schema/
+      execute_structured 6 项 ✅
+    - ReActAgent registry + find_tool + 端到端 3 项 ✅
+    - SimpleAgent find_tool 1 项 ✅
+    - 全量测试：66 passed 无回归 ✅
+  - 验证：全部通过（exit code 0）
+
+
+================================================================
+  当前项目结构:
+  practice/
+  ├── skills/             # Skills 知识外化系统
+  │   ├── __init__.py
+  │   ├── loader.py       # SkillLoader（发现/加载/管理技能 + front-matter 解析 + 上下文注入）
+  │   ├── skill_tool.py   # SkillTool（Agent 运行时 list/use/context 调用技能）
+  │   └── builtin/        # 内置技能包（code_review / rag_practice）
+  ├── core/               # 核心基础设施
+  │   ├── __init__.py
+  │   ├── llm.py          # LLM 客户端（LLMClient 协议 + practiceLLM + stream_chunks 流式块生成器）
+  │   └── streaming.py    # SSE 流式输出（SSEEvent 协议 + stream_agent + SSEClientStream + HTTP 演示）
+  ├── agents/             # Agent 实现
+  │   ├── __init__.py
+  │   ├── agent_framework.py        # Agent 统一框架（BaseAgent + AgentRegistry + AgentFactory + AgentAdapter + Message）
+  │   ├── agent_router.py           # Agent 智能路由（LLM 分类 + 关键词规则两级路由 + 兜底）
+  │   ├── agent_trace.py            # Agent 级执行轨迹（TraceLogger：LLM/工具事件 + 失败链 + JSONL）
+  │   ├── session_store.py          # 会话持久化（SQLite：会话元信息 + 消息历史 + 断点续聊）
+  │   ├── simple_agent.py          # 简单聊天 Agent
+  │   ├── ReAct_agent.py           # ReAct 推理行动 Agent
+  │   ├── Reflection_agent.py      # 反思改进 Agent
+  │   ├── plan_and_solve_agent.py  # 规划执行 Agent
+  │   ├── function_call_agent.py   # 原生函数调用 Agent
+  │   └── TreeOfThought_agent.py   # Tree-of-Thought 搜索 Agent
+  ├── tools/              # 工具系统（按功能分组）
+  │   ├── __init__.py
+  │   ├── framework/              # 工具框架
+  │   │   ├── __init__.py
+  │   │   ├── tool_system.py           # 统一工具系统（Tool/ToolParameter/ToolRegistry + ToolResponse/熔断器/双协议）
+  │   │   ├── tool_response.py         # ToolResponse 结构化返回协议（status/output/data/error）
+  │   │   ├── circuit_breaker.py       # 熔断器（CLOSED/OPEN/HALF_OPEN 三态 + 装饰器）
+  │   │   ├── tool_filter.py           # 工具过滤（ToolFilter：按 Agent 角色 allow/deny 裁剪可见工具）
+  │   │   ├── sub_agent_tool.py        # 子代理委派工具（SubAgentTool：task+agent_type + 嵌套深度保护）
+  │   │   ├── registry_factory.py      # 一键装配工厂（build_all_tools_registry：8 分组 11 工具 + 角色策略）
+  │   │   ├── tool_chain_manager.py    # 工具链管理器
+  │   │   └── async_tool_executor.py   # 异步工具执行器
+  │   ├── context/               # 上下文构建
+  │   │   ├── __init__.py
+  │   │   ├── context_builder.py       # 上下文构建器（ContextPacket + ContextConfig）
+  │   │   ├── context_monitor.py       # 上下文构建监控日志（JSONL + 聚合统计）
+  │   │   └── gs_sc_pipeline.py        # GSSC 流水线（Gather→Select→Structure→Compress）
+  │   ├── memory/                # 记忆系统（外部记忆）
+  │   │   ├── __init__.py
+  │   │   ├── memory_tool.py           # 记忆工具（工作/情景/语义/感知记忆 + MemoryManager）
+  │   │   ├── note_tool.py             # 结构化笔记工具（Markdown+YAML + 分级缓存）
+  │   │   └── note_context_bridge.py   # NoteTool×ContextBuilder 桥接（类型加权）
+  │   ├── terminal/              # 终端工具
+  │   │   ├── __init__.py
+  │   │   ├── terminal_tool.py         # 安全终端工具（白名单+沙箱+超时+输出限制）
+  │   │   └── smart_terminal.py        # 协同终端（Terminal×Memory×Note×ContextBuilder）
+  │   ├── search/                # 搜索工具
+  │   │   ├── __init__.py
+  │   │   ├── advanced_search_tool.py  # 多源搜索工具（博查+Tavily）
+  │   │   └── search_registry.py       # 搜索工具注册表
+  │   ├── rag/                   # RAG 检索增强
+  │   │   ├── __init__.py
+  │   │   └── rag_tool.py              # RAG 工具（转换/分块/混合检索/增强问答/缓存）
+  ├── tests/              # pytest 单元测试（66 个用例，无网络依赖）
+  │   ├── test_agent_framework.py
+  │   ├── test_agent_trace.py
+  │   ├── test_circuit_breaker.py
+  │   ├── test_registry_factory.py
+  │   ├── test_session_store.py
+  │   ├── test_skill_loader.py
+  │   ├── test_throttle.py          # 防重试节流机制（9 个用例）
+  │   ├── test_tool_filter.py
+  │   └── test_tool_response.py
+  ├── docs/               # 文档（README / architecture / usage）
+  ├── examples/           # 示例代码（5 个可运行示例 + README 索引）
+  ├── .env                # 环境变量配置
+  ├── run.py              # Agent 启动器（交互会话 / 单次执行 / --type / --auto 路由 / --stream 流式 / --session 持久化 / --demo）
+  ├── pyproject.toml      # 项目依赖配置
+  ├── uv.lock            # 依赖锁定文件
+  └── CHANGELOG.txt       # 本变更记录
+================================================================
