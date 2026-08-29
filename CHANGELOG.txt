@@ -1348,6 +1348,16 @@
   - 改动：更新 CHANGELOG 底部项目结构图，反映当前实际文件布局
   - 验证：CHANGELOG 结构图与实际目录一致 ✅
 
+[2026-08-29] 77. Docker 容器化
+  - 背景：将项目镜像到 Docker，方便对代码进行测试修改
+  - 改动：
+    - 创建 .dockerignore（排除 Python 缓存/Git/IDE 配置/运行数据等）
+    - 创建 Dockerfile（python:3.12-slim + pip 安装 uv + /opt/venv 独立虚拟环境 + UV_PROJECT_ENVIRONMENT 避免 bind mount 覆盖）
+    - 创建 docker-compose.yml（bind mount 源码 + env_file 环境变量 + stdin_open/tty 交互式终端）
+    - daemon.json 配置 registry-mirrors（docker.xuanyuan.me / docker.1ms.run）解决国内网络无法拉取 Docker Hub 镜像的问题
+  - 验证：镜像构建成功（65 包安装）✅ 容器启动正常 ✅ 环境变量加载正常 ✅ 依赖导入成功 ✅
+  - 修复：Docker Desktop 配置文件权限错误（settings-store.json Access is denied）→ 手动重命名后恢复
+
 
 ================================================================
   当前项目结构:
@@ -1422,6 +1432,9 @@
   ├── docs/               # 文档（README / architecture / usage）
   ├── examples/           # 示例代码（5 个可运行示例 + README 索引）
   ├── .env                # 环境变量配置
+  ├── .dockerignore       # Docker 构建上下文排除规则
+  ├── Dockerfile          # Docker 镜像构建（python:3.12-slim + uv + /opt/venv）
+  ├── docker-compose.yml  # Docker 编排（bind mount + env_file + 交互式终端）
   ├── run.py              # Agent 启动器（交互会话 / 单次执行 / --type / --auto 路由 / --stream 流式 / --session 持久化 / --demo）
   ├── pyproject.toml      # 项目依赖配置
   ├── uv.lock            # 依赖锁定文件

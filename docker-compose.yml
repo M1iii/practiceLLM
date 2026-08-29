@@ -1,0 +1,18 @@
+services:
+  practice-llm:
+    build: .
+    image: practice-llm:latest
+    container_name: practice-llm
+    stdin_open: true    # 保持标准输入打开（交互式）
+    tty: true           # 分配伪终端
+    env_file:
+      - .env
+    volumes:
+      # bind mount 源码，容器内编辑即时生效
+      - .:/app
+    working_dir: /app
+    # 使用 /opt/venv 中的 Python 环境（避免被 bind mount 覆盖）
+    environment:
+      - PATH=/opt/venv/bin:/usr/local/bin:/usr/local/sbin
+    # 默认命令（可覆盖）
+    command: ["python", "run.py"]

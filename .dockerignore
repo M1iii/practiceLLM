@@ -1,0 +1,42 @@
+# ===== Python =====
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ===== Git =====
+.git/
+.gitignore
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+
+# ===== 运行数据（由 bind mount 提供）=====
+data/
+logs/
+*.log
+
+# ===== 环境变量（由 docker-compose env_file 注入）=====
+.env
+.env.*
+
+# ===== Docker 自身 =====
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ===== 测试缓存 =====
+.pytest_cache/
+.coverage
+
+# ===== 临时文件 =====
+err.txt
+*.tmp
+
+# ===== 本地工具 =====
+.trae-html-share-packages/
