@@ -56,6 +56,7 @@ import uuid
 import re
 import math
 import json
+import base64
 import sqlite3
 import hashlib
 import urllib.request
@@ -66,6 +67,17 @@ from typing import List, Dict, Any, Optional, Tuple
 from collections import Counter
 
 from tools.framework.tool_system import Tool, ToolParameter, dual_protocol_execute
+
+# PostgreSQL 后端（可选，导入失败时回退）
+try:
+    from core.storage import PostgreSQLBackend
+    _HAS_PG = True
+except ImportError:
+    PostgreSQLBackend = None
+    _HAS_PG = False
+except Exception:
+    PostgreSQLBackend = None
+    _HAS_PG = False
 
 try:
     from dotenv import load_dotenv
@@ -79,16 +91,18 @@ except ImportError:
 # ============================================================
 
 class EmbeddingClient:
-    """阿里云百炼嵌入 API 客户端，支持离线回退。
+    """阿里云百炼多模态嵌入 API 客户端，支持离线回退。
 
     特点：
-      - OpenAI 兼容接口，调用 DashScope text-embedding-v3
-      - MD5 文本缓存，避免重复 API 调用
+      - 调用 DashScope qwen3-vl-embedding 多模态嵌入模型
+      - 支持文本 + 图片多模态输入（独立嵌入 / 融合嵌入）
+      - 纯文本调用向后兼容 text-embedding-v3 用法
+      - MD5 内容缓存，避免重复 API 调用
       - 自动检测 API Key 可用性，不可用时返回 None 触发 fallback
       - 批量嵌入支持，减少网络请求次数
     """
 
-    DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+    DASHSCOPE_URL = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
 
     def __init__(self):
         self.api_key = os.getenv("DASHSCOPE_API_KEY", "")
@@ -109,20 +123,47 @@ class EmbeddingClient:
     def is_available(self) -> bool:
         return self._available
 
-    def embed(self, text: str) -> Optional[List[float]]:
-        """获取单条文本的嵌入向量，失败返回 None。"""
+    def embed(self, text: str = None, images: List[str] = None,
+              enable_fusion: bool = False) -> Optional[List[float]]:
+        """获取嵌入向量，支持多模态输入（文本 + 图片）。
+
+        向后兼容：embed("text") 纯文本调用仍正常工作。
+        多模态：embed(text="描述", images=["img.jpg"]) 生成图文融合嵌入。
+
+        Args:
+            text: 文本内容
+            images: 图片文件路径列表
+            enable_fusion: 是否融合嵌入（将图文融合为一个向量）
+        """
         if not self._available:
             return None
 
-        cache_key = hashlib.md5(text.encode("utf-8")).hexdigest()
+        contents = []
+        if text:
+            contents.append({"text": text})
+        if images:
+            for img_path in images:
+                with open(img_path, "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+                ext = os.path.splitext(img_path)[1].lstrip(".") or "png"
+                img_data_uri = f"data:image/{ext};base64,{img_b64}"
+                contents.append({"image": img_data_uri})
+
+        if not contents:
+            return None
+
+        cache_key = hashlib.md5(
+            json.dumps(contents, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         try:
-            embeddings = self._call_api([text])
-            if embeddings and len(embeddings) > 0:
-                self._cache[cache_key] = embeddings[0]
-                return embeddings[0]
+            embeddings = self._call_api(contents, enable_fusion=enable_fusion)
+            if embeddings:
+                result = embeddings[0]  # 返回第一个嵌入（融合时唯一，独立时取文本）
+                self._cache[cache_key] = result
+                return result
         except Exception:
             pass
 
@@ -157,12 +198,32 @@ class EmbeddingClient:
 
         return results
 
-    def _call_api(self, texts: List[str]) -> List[List[float]]:
-        """调用 DashScope 嵌入 API。"""
+    def _call_api(self, inputs: Any, embedding_type: str = "query",
+                  enable_fusion: bool = False) -> List[List[float]]:
+        """调用 DashScope 多模态嵌入 API（qwen3-vl-embedding）。
+
+        自动检测：传入 List[str] 时自动包装为 text content（保持 embed_batch 兼容）；
+        传入 List[dict] 时作为 contents 直接使用。
+
+        Args:
+            inputs: List[str] 纯文本列表 或 List[dict] contents 结构
+            embedding_type: 保留参数，暂未使用
+            enable_fusion: 是否融合嵌入
+        """
+        # 自动检测：字符串列表 → 包装为 text content
+        if inputs and isinstance(inputs[0], str):
+            contents = [{"text": t} for t in inputs]
+        else:
+            contents = inputs
+
+        params = {}
+        if enable_fusion:
+            params["enable_fusion"] = True
+
         data = json.dumps({
             "model": self.model,
-            "input": texts,
-            "encoding_format": "float",
+            "input": {"contents": contents},
+            "parameters": params,
         }).encode("utf-8")
 
         req = urllib.request.Request(
@@ -179,7 +240,7 @@ class EmbeddingClient:
             result = json.loads(resp.read().decode("utf-8"))
 
         embeddings = []
-        for item in sorted(result.get("data", []), key=lambda x: x.get("index", 0)):
+        for item in result.get("output", {}).get("embeddings", []):
             embeddings.append(item["embedding"])
 
         return embeddings
@@ -599,22 +660,33 @@ class WorkingMemory(MemoryModule):
 
 
 class EpisodicMemory(MemoryModule):
-    """情景记忆模块 —— SQLite持久化 + 会话索引 + 混合检索。
+    """情景记忆模块 —— SQLite / PostgreSQL 持久化 + 会话索引 + 混合/向量检索。
 
     特点：
-      - SQLite 持久化存储，支持崩溃恢复
+      - SQLite 持久化存储（默认），支持崩溃恢复
+      - PostgreSQL 可选（JSONB + pgvector），支持向量级联检索
       - 会话级索引（sessions），支持按会话检索
-      - 混合检索：结构化过滤 + TF-IDF 语义向量检索
+      - 混合检索：结构化过滤 + TF-IDF 语义向量检索（SQLite）
+      - pgvector 余弦距离检索（PostgreSQL）
       - 评分公式：(向量相似度 × 0.8 + 时间近因性 × 0.2) × (0.8 + 重要性 × 0.4)
     """
 
-    def __init__(self, db_path: str = ":memory:"):
+    def __init__(self, db_path: str = ":memory:", pg_backend=None):
         super().__init__("episodic", None)
-        self.db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._pg_backend = pg_backend
         self.sessions: Dict[str, List[str]] = {}  # session_id -> [episode_id]
-        self._init_db()
-        self._load_from_db()
+
+        if self._pg_backend:
+            # PostgreSQL 模式：直接从 pg_backend 管理
+            self.db_path = None
+            self._conn = None
+            self._embedding_client = EmbeddingClient()
+        else:
+            # SQLite 模式（默认）
+            self.db_path = db_path
+            self._conn: Optional[sqlite3.Connection] = None
+            self._init_db()
+            self._load_from_db()
 
     # ============================================================
     # SQLite 持久化
@@ -686,8 +758,10 @@ class EpisodicMemory(MemoryModule):
         self._conn.commit()
 
     def close(self):
-        """关闭 SQLite 连接。"""
-        if self._conn:
+        """关闭数据库连接。"""
+        if self._pg_backend:
+            self._pg_backend.close()
+        elif self._conn:
             self._conn.close()
             self._conn = None
 
@@ -718,34 +792,68 @@ class EpisodicMemory(MemoryModule):
     # ============================================================
 
     def add(self, entry: MemoryEntry) -> str:
-        """添加情景记忆：内存 + 会话索引 + SQLite 持久化。"""
+        """添加情景记忆：内存 + 会话索引 + 持久化。"""
         self._memories.append(entry)
         self._index_session(entry)
-        self._persist_episode(entry)
+
+        if self._pg_backend:
+            self._pg_add(entry)
+        else:
+            self._persist_episode(entry)
         return ""
 
+    def _pg_add(self, entry: MemoryEntry):
+        """PostgreSQL 模式：写入 episodes 表（JSONB metadata + pgvector embedding）。"""
+        # 生成向量嵌入
+        vec = self._embedding_client.embed(entry.content)
+        vec_str = "[" + ",".join(str(v) for v in vec) + "]" if vec else None
+
+        embedding_cast = "::vector" if self._pg_backend._has_pgvector else ""
+
+        self._pg_backend.execute(
+            f"""INSERT INTO episodes (episode_id, session_id, timestamp, content,
+               importance, memory_type, modality, file_path, metadata, embedding)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s{embedding_cast})""",
+            (entry.memory_id, entry.session_id, entry.timestamp,
+             entry.content, entry.importance, entry.memory_type,
+             entry.modality, entry.file_path,
+             json.dumps(entry.metadata, ensure_ascii=False),
+             vec_str)
+        )
+
     def clear(self):
-        """清空所有记忆（内存 + SQLite）。"""
+        """清空所有记忆（内存 + 数据库）。"""
         self._memories.clear()
         self.sessions.clear()
-        self._conn.execute("DELETE FROM episodes")
-        self._conn.commit()
+        if self._pg_backend:
+            self._pg_backend.execute("DELETE FROM episodes")
+        else:
+            self._conn.execute("DELETE FROM episodes")
+            self._conn.commit()
 
     def set_memories(self, memories: List[MemoryEntry]):
-        """直接替换记忆列表，同步 SQLite 和会话索引。"""
+        """直接替换记忆列表，同步数据库和会话索引。"""
         self._memories = list(memories)
         self._rebuild_session_index()
-        self._flush_db()
+        if self._pg_backend:
+            self._pg_backend.execute("DELETE FROM episodes")
+            for mem in self._memories:
+                self._pg_add(mem)
+        else:
+            self._flush_db()
 
     # ============================================================
     # 混合检索
     # ============================================================
 
     def retrieve(self, query: str, limit: int = 5, **kwargs) -> List[Tuple[float, float, "MemoryEntry", Dict]]:
-        """混合检索：结构化过滤 + TF-IDF 语义向量检索。
+        """混合检索：结构化过滤 + TF-IDF / pgvector 语义向量检索。
+
+        PostgreSQL 模式使用 pgvector 余弦距离检索；
+        SQLite 模式使用 TF-IDF 余弦相似度检索。
 
         评分算法：
-          vector_score  = TF-IDF 余弦相似度（失败时回退关键词匹配）
+          vector_score  = TF-IDF 余弦相似度 / pgvector 余弦距离转换
           recency_score = exp(-age_days / 30)     # 30天半衰期
           base_relevance = vector_score × 0.8 + recency_score × 0.2
           importance_weight = 0.8 + importance × 0.4
@@ -754,6 +862,9 @@ class EpisodicMemory(MemoryModule):
         Returns:
             [(final_score, base_relevance, memory, details_dict), ...]
         """
+        if self._pg_backend:
+            return self._pgvector_retrieve(query, limit, **kwargs)
+
         if not self._memories:
             return []
 
@@ -801,6 +912,60 @@ class EpisodicMemory(MemoryModule):
                     "vector_score": effective_vec,
                     "tfidf_score": vec_score if tfidf_available else 0.0,
                     "keyword_score": keyword_score,
+                    "recency_score": recency_score,
+                    "importance_weight": importance_weight,
+                    "base_relevance": base_relevance,
+                    "final_score": final_score,
+                }
+                scored.append((final_score, base_relevance, mem, details))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[:limit]
+
+    def _pgvector_retrieve(self, query: str, limit: int,
+                           **kwargs) -> List[Tuple[float, float, "MemoryEntry", Dict]]:
+        """PostgreSQL pgvector 模式检索：使用余弦距离运算符 <=>。
+
+        直接从数据库级向量检索，返回按余弦距离升序排列的结果。
+        """
+        vec = self._embedding_client.embed(query)
+        if not vec:
+            return []
+
+        session_id = kwargs.get("session_id")
+        rows = self._pg_backend.vector_search(vec, limit=limit,
+                                                session_id=session_id)
+        if not rows:
+            return []
+
+        scored = []
+        for row in rows:
+            # 余弦距离 → 相似度转换（distance 0 = 完全相同, 2 = 完全相反）
+            distance = row.get("distance", 1.0)
+            vector_score = max(0.0, 1.0 - distance)
+
+            mem = MemoryEntry(
+                memory_id=row["episode_id"],
+                content=row["content"],
+                memory_type=row.get("memory_type") or "episodic",
+                importance=row.get("importance", 0.8),
+                timestamp=row.get("timestamp", ""),
+                session_id=row.get("session_id", "default"),
+                file_path=row.get("file_path", ""),
+                modality=row.get("modality", ""),
+                metadata=row.get("metadata", {}),
+            )
+
+            recency_score = self._calculate_recency(mem.timestamp)
+            base_relevance = vector_score * 0.8 + recency_score * 0.2
+            importance_weight = 0.8 + (mem.importance * 0.4)
+            final_score = base_relevance * importance_weight
+
+            if final_score > 0:
+                details = {
+                    "method": "pgvector",
+                    "vector_score": vector_score,
+                    "pgvector_distance": distance,
                     "recency_score": recency_score,
                     "importance_weight": importance_weight,
                     "base_relevance": base_relevance,
