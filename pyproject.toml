@@ -7,6 +7,9 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "markitdown[all]>=0.1.7",
     "psycopg2-binary>=2.9",
+    "llama-index>=0.14.24",
+    "llama-index-vector-stores-postgres>=0.8.1",
+    "llama-index-retrievers-bm25>=0.7.1",
 ]
 
 [project.optional-dependencies]

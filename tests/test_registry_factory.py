@@ -1,6 +1,6 @@
-"""registry_factory 一键装配工厂测试（无网络、无外部密钥）。"""
-from agents.framework.agent_framework import AgentFactory, BaseAgent
-from tools.framework.registry_factory import (
+﻿"""registry_factory 一键装配工厂测试（无网络、无外部密钥）。"""
+from src.agents.framework.agent_framework import AgentFactory, BaseAgent
+from src.tools.framework.registry_factory import (
     build_all_tools_registry, build_role_tool_filter, describe_bundle)
 
 

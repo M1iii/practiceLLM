@@ -1,4 +1,4 @@
-"""示例 03：会话持久化 + 执行轨迹（可观测性）。
+﻿"""示例 03：会话持久化 + 执行轨迹（可观测性）。
 
 运行: python examples/03_session_and_trace.py
 （会调用真实 LLM 1 次）
@@ -9,9 +9,9 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.framework.agent_framework import BaseAgent
-from agents.framework.session_store import SessionStore
-from agents.framework.agent_trace import TraceLogger
+from src.agents.framework.agent_framework import BaseAgent
+from src.agents.framework.session_store import SessionStore
+from src.agents.framework.agent_trace import TraceLogger
 
 
 class SimpleEcho(BaseAgent):

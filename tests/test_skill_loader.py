@@ -1,5 +1,5 @@
-"""SkillLoader 测试（无需 LLM）。"""
-from skills.loader import SkillLoader
+﻿"""SkillLoader 测试（无需 LLM）。"""
+from src.skills.loader import SkillLoader
 
 
 def test_discover_builtin_skills():
@@ -57,7 +57,7 @@ def test_unknown_skill():
 
 
 def test_parse_front_matter_types():
-    from skills.loader import SkillLoader as SL
+    from src.skills.loader import SkillLoader as SL
     meta, body = SL._parse_front_matter(
         "---\nname: x\ntags: [a, b]\ncount: 5\nenabled: true\n---\n正文")
     assert meta["tags"] == ["a", "b"]

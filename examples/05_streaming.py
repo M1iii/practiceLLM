@@ -1,4 +1,4 @@
-"""示例 05：SSE 流式输出。
+﻿"""示例 05：SSE 流式输出。
 
 演示 BaseAgent.stream() 事件流 + HTTP text/event-stream 消费。
 运行: python examples/05_streaming.py
@@ -12,9 +12,9 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from agents.framework.agent_framework import BaseAgent
-from core.llm import practiceLLM
-from core.streaming import SSEClientStream
+from src.agents.framework.agent_framework import BaseAgent
+from src.core.llm import practiceLLM
+from src.core.streaming import SSEClientStream
 
 
 class StreamAgent(BaseAgent):

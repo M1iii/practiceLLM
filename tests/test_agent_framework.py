@@ -1,6 +1,6 @@
-"""Agent 统一框架测试（无 LLM，使用演示 Agent）。"""
+﻿"""Agent 统一框架测试（无 LLM，使用演示 Agent）。"""
 import pytest
-from agents.framework.agent_framework import (
+from src.agents.framework.agent_framework import (
     BaseAgent, AgentFactory, AgentRegistry, AgentAdapter, AgentResult)
 
 
@@ -74,7 +74,7 @@ def test_adapter_wraps_chat_agent():
 
 def test_session_persistence_via_execute(tmp_path):
     """BaseAgent.execute 自动持久化（配置 session_store）。"""
-    from agents.framework.session_store import SessionStore
+    from src.agents.framework.session_store import SessionStore
     store = SessionStore(db_path=str(tmp_path / "t.db"))
     agent = EchoAgent(name="e", session_store=store, session_id="s1")
     agent.execute("第一问")

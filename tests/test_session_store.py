@@ -1,5 +1,5 @@
-"""会话持久化测试（使用临时数据库，无网络）。"""
-from agents.framework.session_store import SessionStore
+﻿"""会话持久化测试（使用临时数据库，无网络）。"""
+from src.agents.framework.session_store import SessionStore
 
 
 def test_create_and_get_session(tmp_path):

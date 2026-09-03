@@ -1,4 +1,4 @@
-"""示例 01：Agent 统一框架基础。
+﻿"""示例 01：Agent 统一框架基础。
 
 演示 BaseAgent / AgentFactory / AgentRegistry / AgentAdapter 的用法。
 运行: python examples/01_agent_framework.py
@@ -8,7 +8,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.framework.agent_framework import BaseAgent, AgentFactory, AgentRegistry
+from src.agents.framework.agent_framework import BaseAgent, AgentFactory, AgentRegistry
 
 
 class GreetAgent(BaseAgent):

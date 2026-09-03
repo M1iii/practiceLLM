@@ -1,4 +1,4 @@
-"""防重试节流机制测试。
+﻿"""防重试节流机制测试。
 
 测试项：
 1. AdvancedSearchTool 连续失败计数 + 终端错误信号
@@ -16,8 +16,8 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.search.advanced_search_tool import AdvancedSearchTool
-from agents.function_call_agent import FunctionCallAgent
+from src.tools.search.advanced_search_tool import AdvancedSearchTool
+from src.agents.function_call_agent import FunctionCallAgent
 
 
 def test_search_tool_throttle():
@@ -141,7 +141,7 @@ def test_agent_disabled_tool_excluded():
     mock_llm.client = MagicMock()
 
     # 创建工具
-    from tools.framework.tool_system import CalculatorTool
+    from src.tools.framework.tool_system import CalculatorTool
     calculator = CalculatorTool()
 
     agent = FunctionCallAgent(

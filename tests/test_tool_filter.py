@@ -1,6 +1,6 @@
-"""工具过滤测试。"""
-from tools.framework.tool_filter import ToolFilter
-from tools.framework.tool_system import ToolRegistry, FunctionTool, ToolParameter
+﻿"""工具过滤测试。"""
+from src.tools.framework.tool_filter import ToolFilter
+from src.tools.framework.tool_system import ToolRegistry, FunctionTool, ToolParameter
 
 
 def test_default_allow_all():

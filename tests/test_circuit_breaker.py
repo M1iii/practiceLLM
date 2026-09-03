@@ -1,7 +1,7 @@
-"""熔断器状态机测试。"""
+﻿"""熔断器状态机测试。"""
 import time
 import pytest
-from tools.framework.circuit_breaker import (
+from src.tools.framework.circuit_breaker import (
     CircuitBreaker, CircuitOpenError, CircuitState, circuit_breaker)
 
 

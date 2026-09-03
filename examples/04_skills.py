@@ -1,4 +1,4 @@
-"""示例 04：Skills 知识外化。
+﻿"""示例 04：Skills 知识外化。
 
 演示 SkillLoader 发现/加载/注入技能，以及 SkillTool 运行时调用。
 运行: python examples/04_skills.py
@@ -8,8 +8,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from skills.loader import SkillLoader
-from tools.framework.tool_system import ToolRegistry
+from src.skills.loader import SkillLoader
+from src.tools.framework.tool_system import ToolRegistry
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
 
 
 def loader_tool():
-    from skills.skill_tool import SkillTool
+    from src.skills.skill_tool import SkillTool
     return SkillTool()
 
 

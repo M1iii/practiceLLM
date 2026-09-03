@@ -1,4 +1,4 @@
-"""
+﻿"""
 多模态嵌入测试：验证 qwen3-vl-embedding 的文本、图片、融合嵌入能力。
 """
 import sys
@@ -7,7 +7,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.memory.memory_tool import EmbeddingClient
+from src.tools.memory.memory_tool import EmbeddingClient
 
 
 def _create_test_image(width=64, height=64, color=(255, 0, 0)):

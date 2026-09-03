@@ -1,9 +1,9 @@
-"""Agent 级 TraceLogger 测试（不触发真实 LLM）。"""
+﻿"""Agent 级 TraceLogger 测试（不触发真实 LLM）。"""
 import json
 import tempfile
 import os
-from agents.framework.agent_trace import TraceLogger, TraceEvent, AgentTrace
-from agents.framework.agent_framework import BaseAgent
+from src.agents.framework.agent_trace import TraceLogger, TraceEvent, AgentTrace
+from src.agents.framework.agent_framework import BaseAgent
 
 
 class EchoAgent(BaseAgent):

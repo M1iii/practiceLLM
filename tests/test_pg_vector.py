@@ -1,4 +1,4 @@
-"""
+﻿"""
 测试 PostgreSQL JSONB + pgvector/降级检索。
 
 测试内容：
@@ -15,7 +15,7 @@ import json
 import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.storage import PostgreSQLBackend
+from src.core.storage import PostgreSQLBackend
 
 
 def test_01_connection():
@@ -165,7 +165,7 @@ def test_04_episodic_memory_integration():
     print("=" * 60)
     print("Test 4: EpisodicMemory 集成")
     print("=" * 60)
-    from tools.memory.memory_tool import EpisodicMemory, MemoryEntry
+    from src.tools.memory.memory_tool import EpisodicMemory, MemoryEntry
 
     backend = PostgreSQLBackend()
     # 清理之前测试留下的 pg-test-* 数据
@@ -231,7 +231,7 @@ def test_05_sqlite_compatibility():
     print("=" * 60)
     print("Test 5: SQLite 兼容性（默认模式）")
     print("=" * 60)
-    from tools.memory.memory_tool import EpisodicMemory, MemoryEntry
+    from src.tools.memory.memory_tool import EpisodicMemory, MemoryEntry
     import tempfile
 
     # SQLite 模式（默认）

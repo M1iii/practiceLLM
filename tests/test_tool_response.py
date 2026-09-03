@@ -1,7 +1,7 @@
-"""ToolResponse 协议测试。"""
+﻿"""ToolResponse 协议测试。"""
 import pytest
-from tools.framework.tool_response import ToolResponse
-from tools.framework.tool_system import FunctionTool, ToolRegistry, ToolParameter
+from src.tools.framework.tool_response import ToolResponse
+from src.tools.framework.tool_system import FunctionTool, ToolRegistry, ToolParameter
 
 
 def test_success_response():

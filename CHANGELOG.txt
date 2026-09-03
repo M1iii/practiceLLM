@@ -4,6 +4,37 @@
   按时间排序，从项目创建开始
 ================================================================
 
+[2026-09-02] 95. 自动记忆层 + 文档多模态索引
+  - 目标：实现端到端记忆持久化（自动检索注入 + 自动存储）和文档多模态索引（图片→VL描述→索引）
+  - 新增文件：
+    - src/agents/framework/memory_engine.py：MemoryEngine 类，封装 MemoryTool 的检索和存储
+      - retrieve(query, top_k, threshold) → 格式化记忆文本注入上下文
+      - store(question, answer) → 自动存入情景记忆
+      - 惰性初始化 MemoryTool，异常时静默降级
+      - 阈值过滤（低于 similarity_threshold 丢弃），避免不相关记忆
+    - tests/unit/test_memory_engine.py：16 个单元测试覆盖 MemoryEngine 和 BaseAgent 集成
+  - 修改文件：
+    - src/agents/framework/agent_framework.py：
+      - BaseAgent.__init__() 新增 auto_memory/memory_top_k/memory_threshold 配置
+      - _init_memory_engine() 惰性初始化 MemoryEngine
+      - execute() 改造：_execute() 前注入记忆上下文，_execute() 后自动存储
+      - 新增 _auto_store_memory() 方法，执行失败时不存储
+    - src/tools/rag/llamaindex/build_pg_index.py：
+      - 新增 _extract_and_describe_images() 函数
+        - 从 markdown 中提取图片引用（![alt](path) 语法）
+        - 去重后，用 VLClient 生成每张图片的文本描述
+        - 创建 Document 对象，doc_type="image"，tags=["image","multimodal"]
+        - 跨越 10MB 的图片跳过，VL 分析失败时跳过
+      - Step 1.8 新增多模态图片索引步骤，输出到 enriched_docs
+  - 参数配置（可禁用）：
+    auto_memory=True / memory_top_k=3 / memory_threshold=0.5
+  - 验证结果：
+    ✅ 16/16 单元测试通过
+    ✅ MemoryEngine 构造、检索、存储、边界测试全部通过
+    ✅ BaseAgent 集成测试（auto_memory 开关、异常处理）通过
+    ✅ build_pg_index.py 语法正确
+  - 分支：main
+
 [2026-08-08] 1. 补齐 LLM 外部依赖
   - 为 pyproject.toml 添加 openai 和 python-dotenv 依赖
   - 使用 uv 安装依赖
@@ -1398,88 +1429,519 @@
           EpisodicMemory 集成 ✅ 多模态对话存储与检索 ✅ SQLite 兼容性 ✅
   - 分支：feature/multimodal-embedding
 
+[2026-08-31] 81. LlamaIndex 集成 POC（低风险快速验证）
+  - 目标：封装 LLM 和 Embedding 适配器，跑通 SimpleDirectoryReader + SentenceSplitter
+    + VectorStoreIndex（内存模式）完整流程
+  - 改动：
+    - rag/llamaindex/__init__.py：新包初始化
+    - rag/llamaindex/qwen_client.py：轻量 Qwen 对话客户端（OpenAI 兼容接口）
+    - rag/llamaindex/adapters.py：DashScopeEmbedding（继承 BaseEmbedding）/ QwenLLM（继承 CustomLLM）
+    - rag/llamaindex/poc.py：POC 脚本（文档加载→分块→索引→检索→QA 完整链路）
+    - docs/rag_test.md：RAG 技术测试文档，涵盖核心概念、分块策略、高级 RAG 技术、LlamaIndex 简介
+    - pyproject.toml：添加 llama-index / llama-index-core / llama-index-llms-openai 依赖
+  - 验证结果：
+    ✅ SimpleDirectoryReader 加载 4 个文档（rag_test.md 等，共 8033 字符）
+    ✅ SentenceSplitter 分块为 25 个节点（chunk_size=256, overlap=30）
+    ✅ DashScopeEmbedding → LlamaIndex BaseEmbedding 兼容
+    ✅ VectorStoreIndex 内存模式构建成功
+    ✅ 检索测试：语义检索正确排序（"什么是 RAG？" → score=0.8330）
+    ✅ 端到端问答：RAG 解决三大问题 / Parent-Child 分层索引 → 回答准确，引用来源正确
+  - 分支：main
+
+[2026-08-31] 82. PGVectorStore 接入 + Parent-Child 离线索引构建
+  - 目标：接入 PGVectorStore，运行离线脚本将 docs/ 文档构建索引存入 PostgreSQL，
+    启用 Parent-Child 分层结构
+  - 改动：
+    - rag/llamaindex/build_pg_index.py：离线构建脚本
+      - --reset 参数：删除旧表并重建
+      - --table-name 参数：自定义表名（默认 llamaindex_rag）
+      - PGVectorStore.from_params 复用项目现有 .env 配置
+      - hnsw_kwargs=None 跳过索引创建（2560 维超 2000 维上限）
+      - 支持 Parent-Child：HierarchicalNodeParser(chunk_sizes=[1024, 256])
+      - 嵌入 + 检索 + 端到端问答全流程验证
+    - pyproject.toml：添加 llama-index-vector-stores-postgres 依赖
+  - 验证结果：
+    ✅ 114 条记录写入 PostgreSQL 表 data_llamaindex_rag
+    ✅ 向量维度 2560（qwen3-vl-embedding）
+    ✅ JSONB 字段存储完整 metadata（file_path, file_name, relationships 等）
+    ✅ Parent-Child 结构：HierarchicalNodeParser 正确切分 33 个节点
+    ✅ 语义检索正确返回相关结果（score=0.8037）
+    ✅ 端到端问答：RAG 优势 / Parent-Child 设计目的 → 回答准确
+  - 注意：pgvector hnsw/ivfflat 索引均不支持 2560 维，数据量增长后建议降维处理
+  - 分支：main
+
+[2026-08-31] 83.：混合检索 + MQE/HyDE + ResponseSynthesizer
+  - 目标：集成混合检索（稠密 PGVectorStore + 稀疏 BM25）、封装 MQE 多查询扩展和 HyDE
+    假设文档嵌入、接入 ResponseSynthesizer 完善问答体验
+  - 改动：
+    - rag/llamaindex/retrievers.py：混合检索模块
+      - load_pg_index()：从 PostgreSQL 加载索引
+      - build_hybrid_retriever()：QueryFusionRetriever 融合稠密+稀疏检索器
+      - _get_all_nodes_from_index()：从 PGVectorStore 提取节点供 BM25 使用
+      - retrieve_hybrid()：一步完成混合检索的便捷方法
+      - 融合权重：稠密 0.7 + 稀疏 0.3
+    - rag/llamaindex/transforms.py：查询变换模块
+      - MultiQueryExpander：MQE 多查询扩展（LLM 生成 N 个语义等价查询变体）
+      - HyDEExpander：HyDE 假设文档嵌入（LLM 生成假设答案用于检索）
+      - QueryTransformPipeline：MQE + HyDE 串联管线
+      - MQE 使用 Reciprocal Rank Fusion 合并多查询结果
+    - rag/llamaindex/run_qa.py：端到端 QA 脚本
+      - 支持 --no-hybrid / --no-mqe / --no-hyde 开关
+      - 支持 --query 单次查询和交互模式
+      - 集成 ResponseSynthesizer（COMPACT 模式）
+      - 打印耗时、检索结果、引用来源
+    - pyproject.toml：添加 llama-index-retrievers-bm25 依赖
+  - 验证结果：
+    ✅ BM25 加载 114 个节点作为稀疏检索语料
+    ✅ QueryFusionRetriever 混合检索（稠密 0.7 + 稀疏 0.3）
+    ✅ MQE 生成 3 个语义等价查询变体
+    ✅ HyDE 生成假设文档辅助检索
+    ✅ ResponseSynthesizer 正确合成回答，引用准确
+    ✅ 端到端 QA：回答了 RAG 三大问题 / Parent-Child 分层索引，内容准确
+  - 分支：main
+
+[2026-08-31] 84.流式输出支持 + qwen-turbo 模型切换
+  - 目标：添加流式输出支持以提升用户感知速度，对比 qwen-turbo 与 qwen-plus 的响应时间差异
+  - 改动：
+    - rag/llamaindex/qwen_client.py：QwenChatClient 新增 stream_chat() 方法
+      - 基于 OpenAI SDK stream=True 实现逐 chunk 文本生成
+      - 支持 stream_options={"include_usage": True} 获取用量信息
+    - rag/llamaindex/adapters.py：QwenLLM.stream_complete() 改为真实流式
+      - 原实现：一次性获取完整文本后 yield，等同于非流式
+      - 新实现：逐 chunk 从 stream_chat() 接收并 yield，delta 字段为当前片段
+  - 验证结果：
+    ✅ qwen-turbo 问答合成 2.81s（qwen-plus 5.66s），加速 2.01x
+    ✅ 流式首 token 延迟 1.97s，用户感知等待从 6.35s 降至 2.52s（缩短 60%）
+  - 分支：main
+
+[2026-08-31] 85.为 MQE/HyDE 配置独立轻量级 LLM
+  - 目标：为 MQE 多查询扩展和 HyDE 假设文档嵌入配置独立的轻量级 LLM（默认 qwen-turbo），
+    降低中间 LLM 调用的成本，主 LLM 仍用于最终问答合成
+  - 改动：
+    - tools/rag/llamaindex_tool.py：
+      - __init__ 新增 _mqe_llm_model / _hyde_llm_model 配置参数（默认 qwen-turbo）
+      - _lazy_init 拆分 LLM 创建：主 LLM（Settings.llm）用于 ResponseSynthesizer，
+        轻量 LLM 用于 MQE 和 HyDE，互不影响
+  - 验证结果：
+    ✅ MQE 使用 qwen-turbo 模型
+    ✅ 全流程 query/stats 正常
+    ✅ 主 LLM 不受影响，仍使用 RAG_LLM_MODEL 环境变量
+    ✅ 支持自定义 config 覆盖 mqe_llm_model / hyde_llm_model
+  - 分支：main
+
+[2026-08-31] 86.智能查询路由（快速通道 vs 全量通道）
+  - 目标：为 RAG 查询添加智能路由，简单问题走快速通道（纯混合检索，跳过 MQE/HyDE），
+    复杂问题走全量通道（按需启用 MQE/HyDE），避免不必要的 LLM 调用开销
+  - 改动：
+    - src/tools/rag/llamaindex/transforms.py：
+      - 新增 QueryClassifier 规则分类器，5 级优先级路由
+    - src/tools/rag/llamaindex_tool.py：
+      - __init__ 新增 enable_auto_route 配置参数（默认 True）
+      - _lazy_init 新增 QueryClassifier 初始化
+      - _retrieve 集成智能路由
+      - _do_stats 显示智能路由启用状态
+  - 验证结果：
+    ✅ 12/12 路由规则用例全部通过
+    ✅ "RAG" → fast（纯混合检索）
+    ✅ "为什么 RAG 能减少幻觉" → full（MQE + HyDE）
+    ✅ stats 正确显示"智能路由: 启用"
+    ✅ 支持 enable_auto_route=False 关闭
+  - 分支：main
+
+[2026-08-31] 87.项目结构重组：统一 src/ 布局
+  - 目标：将分散的代码按功能分组归入 src/ 目录，消除目录交叉引用，清理冗余文件
+  - 背景：原项目根目录下有 agents/、core/、tools/、rag/、skills/ 等多个顶层目录，
+    RAG 代码分散在 rag/llamaindex/ 和 tools/rag/ 之间，测试文件混杂，基础设施文件散落根目录
+  - 改动：
+    - 新目录结构：
+      - src/：主源代码
+        - src/agents/           ← agents/ 迁入
+        - src/core/             ← core/ 迁入
+        - src/tools/            ← tools/ 迁入（含框架/搜索/终端/记忆/上下文/RAG）
+        - src/tools/rag/llamaindex/  ← rag/llamaindex/ 合并迁入（原 rag/ 目录删除）
+        - src/skills/           ← skills/ 迁入
+      - config/：基础设施配置
+        - config/Dockerfile         ← 从根目录迁入
+        - config/docker-compose.yml ← 从根目录迁入
+    - 33 个 .py 文件从原始位置复制到 src/，同步更新所有 import 路径
+      - 替换模式：from agents. → from src.agents.，from core. → from src.core.，等
+    - 33 处 sys.path.insert 从 src/ 文件中移除（依赖 run.py 和 conftest.py 的 sys.path 设置）
+    - 更新 examples/ 目录 5 个文件的 import 路径
+    - 更新 pyproject.toml 配置
+  - 同步更新：CHANGELOG 中所有历史记录的路径引用改为 src/ 前缀
+  - 验证结果：
+    ✅ 所有 import 验证通过（agents/framework/core/tools/memory/rag/skills）
+    ✅ 5 项核心模块导入测试全部通过
+    ✅ 旧目录 agents/、core/、tools/、rag/、skills/ 已删除
+    ✅ 未发现残留旧 import 路径
+  - 分支：main
+
+[2026-09-01] 88. 结构化索引：先筛后查（结构化过滤 + 混合检索）
+  - 目标：实现分层索引（Parent-Child）与结构化索引协同，做到"先筛后查"
+  - 背景：现有 RAG 系统仅支持语义检索，缺乏按元数据字段过滤的能力，
+    无法实现"筛选出某类文档后再语义检索"的精确查找场景
+  - 新增文件：
+    - src/tools/rag/llamaindex/structured_index.py：
+      - MetadataExtractor：从文档内容和文件名自动抽取结构化元数据
+        (doc_type, tags, section, file_name, file_type)，规则驱动无需 LLM
+      - StructuredFilter：在 PostgreSQL metadata_ 列上执行 JSONB 过滤，
+        支持精确匹配 (doc_type=technical) 和标签包含 (tags IN ['RAG'])
+      - StructuredFilterRetriever：先筛后查检索器，先通过 GIN 索引过滤
+        缩小候选集，再在候选集上执行混合检索（稠密向量 + 稀疏 BM25）
+    - src/tools/rag/llamaindex/query_parser.py：
+      - QueryParser：从自然语言查询中提取结构化过滤条件，
+        识别 doc_type 和 tags 关键词，返回 (filters, cleaned_query)
+  - 修改文件：
+    - src/tools/rag/llamaindex/build_pg_index.py：
+      - 新增 Step 1.5：索引构建时自动抽取结构化元数据并写入 metadata_
+      - 新增 Step 3.5：创建 JSONB GIN 索引加速结构化过滤
+    - src/tools/rag/llamaindex_tool.py：
+      - 新增导入：StructuredFilterRetriever, QueryParser
+      - 修改 _retrieve 方法：先解析查询提取 filters，有过滤条件走
+        StructuredFilterRetriever，无过滤条件走原有智能路由 + MQE/HyDE
+      - 更新类文档和描述，标注结构化索引支持
+  - 验证结果：
+    ✅ 所有文件语法正确
+    ✅ QueryParser 解析测试：技术文档/概念/教程/参考 4 种 doc_type 正确识别
+    ✅ MetadataExtractor 抽取测试：文档类型分类、标签提取、章节标题提取正确
+    ✅ LlamaIndexRAGTool 模块导入成功，实例化正常
+    ⚠️ 完整索引构建和检索测试需要 PostgreSQL 服务运行
+  - 分支：main
+
+[2026-09-02] 89. SQL 映射层：结构化数据查询工具
+  - 目标：为纯结构化数据（如用户信息表）提供自然语言直接查询能力，
+    通过 LLM 将自然语言转为 SQL 执行，与 RAG 语义检索形成互补
+  - 背景：之前的先筛后查方案对纯结构化数据（用户表、配置表等）无效，
+    因为结构化数据需要精确值查询而非语义相似度检索
+  - 新增目录：
+    - src/tools/structured_data/ — 结构化数据查询工具包
+  - 新增文件：
+    - src/tools/structured_data/__init__.py
+    - src/tools/structured_data/db_schema.py：
+      - DatabaseInspector：运行时自动检测 PostgreSQL 数据库表结构
+      - ColumnInfo / TableInfo：数据类封装列和表信息
+      - 自动排除 RAG 系统表（llamaindex_rag 等），只返回用户表
+      - 支持按关键词匹配相关表、格式化为 LLM 可理解的 schema 上下文
+    - src/tools/structured_data/sql_executor.py：
+      - SQLExecutor：自然语言 → SQL 完整链路
+      - 自动检测表结构，匹配相关表，LLM 生成 SQL
+      - 执行 SQL 提取（含 markdown 代码块清理、LIMIT 自动补全）
+      - 结果可返回 JSON 或自然语言格式化
+    - src/tools/structured_data/structured_data_tool.py：
+      - StructuredDataTool：遵循框架 Tool 基类规范
+      - 支持 action: query（自然语言）、query_raw（JSON 原始）、list（列表）
+  - 设计原则：
+    - 独立工具，与 LlamaIndexRAGTool 并列，Agent 根据查询意图选择调用
+    - 惰性初始化：数据库连接和 LLM 客户端在首次调用时创建
+    - 复用现有 PostgreSQL 数据库配置（PG_HOST/PORT/USER/PASSWORD/DATABASE）
+    - 复用现有 practiceLLM 客户端（Qwen API）
+  - 验证结果：
+    ✅ 所有文件语法正确
+    ✅ db_schema 模块导入成功，数据类构造正确
+    ✅ sql_executor 模块导入成功，SQL 提取逻辑正确
+    ✅ structured_data_tool 模块导入成功，参数声明正确
+    ⚠️ 完整端到端测试需要 PostgreSQL 服务运行
+  - 分支：main
+
+[2026-09-02] 90. 补充结构化数据查询工具单元测试 + 修复关键词匹配 bug
+  - 目标：为 StructuredDataTool 补充完整单元测试，覆盖数据类、SQL 提取、关键词匹配、工具参数验证
+  - 新增文件：
+    - tests/unit/test_structured_data_tool.py：19 个单元测试用例
+  - 修改文件：
+    - src/tools/structured_data/db_schema.py：
+      - 修复 get_related_tables 中循环变量 `_` 与 score 未正确区分的问题
+      - 新增 CHINESE_QUERY_SEPARATORS：中文查询动词/介词切分表
+      - 改进关键词分词逻辑：支持中文逗号切分、按查询动词切分、单字提取
+      - 为关键词匹配增加中文注释匹配（column.comment）
+  - 测试覆盖：
+    ✅ ColumnInfo 基本构造、summary 输出格式
+    ✅ TableInfo 主键提取、列名列表、LLM 提示上下文格式化
+    ✅ DatabaseInspector 排除表配置、关键词匹配相关表、schema 上下文格式化
+    ✅ SQLExecutor SQL 提取（纯 SQL、markdown 代码块、无法回答标记、LIMIT 补全、末尾分号）
+    ✅ StructuredDataTool 基本属性、参数声明、惰性初始化、错误处理
+  - 分支：main
+
+[2026-09-02] 91. 引入 VL 多模态媒体分析工具（qwen-vl-plus）
+  - 目标：为项目引入视觉语言模型能力，支持图像、视频和混合输入分析，
+    纯文本内容依旧由本地 LLM 处理，不经过 VL 模型
+  - 新增目录：
+    - src/tools/vl_media/ — 多模态媒体分析工具包
+  - 新增文件：
+    - src/tools/vl_media/__init__.py
+    - src/tools/vl_media/vl_client.py：
+      - VLClient：封装 qwen-vl-plus 多模态 API
+      - 支持 analyze_image（单张/多张图片）、analyze_video（视频帧提取+分析）、
+        analyze_mixed（文本+图片混合分析）
+      - 自动图片编码（base64 + MIME 前缀）
+      - 10MB 文件大小检测，超过时提示压缩
+      - 纯文本输入自动跳过 VL 模型
+      - VideoFrameExtractor：视频帧提取器
+        - 优先使用 ffmpeg 提取关键帧，失败回退 OpenCV
+        - 均匀采样策略：短视频（≤30秒）每秒1帧，长视频均匀采样
+        - 自动缩放至最大 1024px，控制 API 传输量
+        - 临时文件自动清理
+    - src/tools/vl_media/vl_media_tool.py：
+      - VLMediaTool：独立工具，遵循框架 Tool 基类规范
+      - 支持 action: analyze_image / analyze_video / analyze_mixed
+      - 7 个参数：action, file_path, file_paths, prompt, texts, system_prompt, max_frames
+      - 惰性初始化：VL 客户端在首次实际调用时创建
+      - 参数验证优先于 API 初始化，避免无谓的 API 调用
+  - 设计原则：
+    - 独立工具，与 LlamaIndexRAGTool、StructuredDataTool 并列
+    - 复用 DashScope API Key（DASHSCOPE_API_KEY）
+    - 使用 OpenAI 兼容协议调用（https://dashscope.aliyuncs.com/compatible-mode/v1）
+    - 支持 VL_MODEL_ID 环境变量切换模型（默认 qwen-vl-plus）
+  - 验证结果：
+    ✅ 所有文件语法正确
+    ✅ 模块导入成功
+    ✅ 图片 base64 编码正确（带 MIME 前缀）
+    ✅ 文件不存在/过大时正确报错
+    ✅ VideoFrameExtractor 参数构造正确
+    ✅ VLClient 构造正确（显式传入 api_key）
+    ✅ VLMediaTool 属性、参数声明、惰性初始化正确
+    ✅ 未知 action、缺少参数时正确返回错误
+  - 分支：main
+
+[2026-09-02] 92. 打通工具-Agent 链路：注册三个新工具到 registry_factory
+  - 目标：将 LlamaIndexRAGTool、StructuredDataTool、VLMediaTool 注册到工具装配工厂，
+    使 Agent 能够发现和调用这三个工具，解决"空有功能无法调用"的问题
+  - 背景：审计发现 3 个工具已实现完整 Tool 基类但未注册到 registry_factory.py，
+    run.py 启动的 FunctionCallAgent 无法感知它们的存在
+  - 修改文件：
+    - src/tools/framework/registry_factory.py：
+      - 新增 _register_llamaindex()：注册 LlamaIndexRAGTool
+      - 新增 _register_structured_data()：注册 StructuredDataTool
+      - 新增 _register_vl_media()：注册 VLMediaTool
+      - 将三个新分组加入 _TOOL_GROUPS 字典
+      - 更新模块文档字符串，列出所有 11 个分组
+      - 更新 build_role_tool_filter() 的 writer 角色允许列表，包含三个新工具
+  - 装配结果：
+    - 工具总数：13 个（Calculator, Time, Search, Weekday, TerminalTool,
+      AdvancedSearch, MemoryTool, NoteTool, RagTool, LlamaIndexRAGTool,
+      StructuredDataTool, VLMediaTool, Skill）
+    - subagent 分组需要 agent_factory 正常跳过，不影响其他工具
+    - analyst 角色可见全部 13 个工具
+    - writer 角色可见 11 个工具（不含 TerminalTool 和 SubAgent）
+  - 验证结果：
+    ✅ 语法正确
+    ✅ 模块导入成功
+    ✅ 三个新工具全部注册成功
+    ✅ analyst 角色可见全部新工具
+    ✅ writer 角色可见新工具
+    ✅ run.py 启动路径默认全量加载，新工具自动可用
+  - 分支：main
+
+[2026-09-02] 93. 打通断点续聊端到端链路
+  - 目标：实现 FunctionCallAgent 多轮对话历史恢复，使 --session 模式下 Agent
+    能真正感知历史对话上下文，做到"断点续聊"
+  - 背景：之前 SessionStore 已完成数据持久化（CRUD），但 FunctionCallAgent.run()
+    每次构建消息列表时从 system + 当前问题开始，不注入历史消息，LLM 无法感知
+    之前对话内容
+  - 修改文件：
+    - src/agents/function_call_agent.py：
+      - 新增 _history 属性（List[Dict[str,str]]）：存储历史对话（role/content）
+      - 新增 _max_history_turns 属性：控制保留最近 20 轮（40 条消息）
+      - 新增 _append_turn() 方法：保存一轮对话到历史并自动裁剪超限轮次
+      - 修改 run() 方法：在 system 之后、当前问题之前注入 _history 消息
+        （输出 "💬 已注入 N 条历史消息" 提示）
+      - 修改 run() 方法：return 前调用 _append_turn() 保存当前轮次
+    - src/agents/framework/agent_framework.py：
+      - 修改 _restore_wrapped_history()：兼容两种 _history 格式
+        - SimpleAgent：Message 对象列表（有 .role / .content 属性）
+        - FunctionCallAgent：dict 列表（{"role": ..., "content": ...}）
+  - 完整链路：
+    run.py --session <id> 启动
+      → AgentAdapter.__init__() 调用 _restore_wrapped_history()
+        → 从 SessionStore 读取历史消息
+        → 注入到 FunctionCallAgent._history
+      → 用户第一轮对话
+        → FunctionCallAgent.run() 注入 _history 到 LLM 消息列表
+        → LLM 感知历史上下文
+        → _append_turn() 保存本轮到 _history
+      → 用户第二轮对话（REPL 循环）
+        → FunctionCallAgent.run() 再次注入累积的 _history
+        → Agent 实现真正的多轮对话连贯性
+  - 验证结果（端到端测试）：
+    ✅ 会话A：两轮对话持久化到 SessionStore（4 条消息）
+    ✅ 会话B：与A隔离，互不干扰
+    ✅ 恢复会话A：基于第1轮历史回答"王五"（已注入 4 条历史消息）
+    ✅ 恢复后连续提问：基于第2轮回答"深圳"（已注入 6 条历史消息）
+    ✅ 多会话隔离：B恢复后回答"赵六"，A恢复后仍是"王五"
+    ✅ 历史消息正确注入 LLM messages（顺序: system→历史→当前问题）
+    ✅ LLM 收到完整对话上下文（多轮历史 + 当前问题）
+    ✅ _history 裁剪正确：保留最近N轮
+  - 分支：main
+
+[2026-09-02] 94. 修正：断点续聊保持 opt-in，常态无状态
+  - 目标：恢复常态无状态行为，断点续聊仅在加 --session 时启用
+  - 背景：上一版将 session 改为常态自动创建，但用户期望的是"不需要就不加参数"
+  - 修改文件：
+    - run.py：恢复 session_store 条件创建逻辑
+      - 常态：session_store=None，打印提示"加 --session <id> 可启用断点续聊"
+      - --session 模式：创建 SessionStore，恢复或新建会话
+  - 使用方式：
+    # 常态（无状态，不持久化）
+    python run.py
+    # 输出: 💡 提示: 加 --session <id> 可启用断点续聊
+
+    # 断点续聊（持久化 + 恢复）
+    python run.py --session session_xxx
+    # 输出: 💾 会话持久化: session_xxx（恢复历史 N 条消息/新建）
+  - 验证结果：✅ 语法正确
+  - 分支：main
+
+[2026-09-03] 96. 补齐长期记忆链路：重要性自适应 + 自动整合 + 知识抽取 + 定期遗忘
+  - 目标：实现 MemoryEngine 完整的长期记忆维护链路，包括动态重要性评分、自动整合管道、实体关系知识抽取和定期遗忘调度
+  - 修改文件：
+    - src/agents/framework/memory_engine.py：
+      - 新增 _calculate_importance()：基于问题长度、回答长度、技术密度、对话深度四维因子，动态计算 0.5~1.0 重要性评分
+      - 新增 _auto_consolidate()：自动整合管道，每 CONSOLIDATE_EVERY(5) 次触发 working→episodic（重要度≥0.6），每 DEEP_CONSOLIDATE_EVERY(20) 次触发 episodic→semantic（重要度≥0.8）
+      - 新增 _extract_knowledge()：从对话中提取实体关系（定义关系「XX是XX」、包含关系「XX包括XX」、技术概念），存入语义记忆
+      - 新增 _auto_forget()：定期遗忘调度，每 FORGET_EVERY(10) 次触发 mixed 策略遗忘（重要度<0.3 且超时>7天）
+      - store() 方法：链式调用 _auto_consolidate() → _auto_forget()
+    - src/agents/framework/agent_framework.py：
+      - _auto_store_memory() 从 session_store 读取历史估算对话深度，传入 MemoryEngine.store()
+    - tests/unit/test_memory_engine.py：新增 3 个遗忘调度测试用例
+  - 验证结果：
+    ✅ 19/19 单元测试通过（原 16 + 新增 3 遗忘调度测试）
+    ✅ 重要性自适应：四维因子加权计算，映射到 0.5~1.0 区间
+    ✅ 自动整合管道：5 轮浅层整合 + 20 轮深层整合 + 知识抽取
+    ✅ 知识抽取：定义关系、包含关系、技术概念实体提取
+    ✅ 定期遗忘：10 轮 mixed 策略遗忘，异常静默降级
+  - 分支：main
+
+[2026-09-03] 97. 终端图片识别：添加 /image 命令 + 增强 Agent 提示
+  - 目标：在终端交互中支持发送图片路径并由系统识别分析
+  - 修改文件：
+    - run.py：
+      - 新增 _handle_image_cmd() 函数：验证图片路径、扩展名、文件大小，初始化 VLMediaTool 并调用 analyze_image 动作
+      - repl() 新增 /image <路径> 和 /img <路径> 命令处理
+      - 更新 /help 和文档注释列出新命令
+    - src/agents/function_call_agent.py：
+      - DEFAULT_SYSTEM_PROMPT 增加图片路径提示，引导 LLM 在用户提供图片路径时调用 VLMediaTool
+  - 验证结果：
+    ✅ 语法检查通过
+    ✅ 19/19 MemoryEngine 测试通过
+    ✅ 19/19 结构化数据测试通过
+    ✅ run.py 可正常启动，/image 命令可用
+  - 分支：main
+
+[2026-09-03] 98. 终端文件读取：添加 /file 命令支持 PDF/Word/Excel 等文档
+  - 目标：在终端交互中支持读取常见文档文件（PDF/Word/Excel/PPT/文本/代码等）的文本内容
+  - 修改文件：
+    - run.py：
+      - 新增 _handle_file_cmd() 函数：通过 DocumentLoader 统一解析文档，支持 24 种文件格式
+      - 自动截断超长输出（最大 5000 字符），防止终端刷屏
+      - 文件大小限制 50MB
+      - repl() 新增 /file <路径> 命令处理
+      - 更新 /help 和文档注释列出新命令
+  - 验证结果：
+    ✅ 语法检查通过
+    ✅ Markdown 文件正常读取，分块展示
+    ✅ .py 代码文件正常读取
+    ✅ 不存在的文件返回错误提示
+    ✅ 不支持的文件格式返回错误提示
+  - 分支：main
 
 ================================================================
   当前项目结构:
   practice/
-  ├── skills/             # Skills 知识外化系统
-  │   ├── __init__.py
-  │   ├── loader.py       # SkillLoader（发现/加载/管理技能 + front-matter 解析 + 上下文注入）
-  │   ├── skill_tool.py   # SkillTool（Agent 运行时 list/use/context 调用技能）
-  │   └── builtin/        # 内置技能包（code_review / rag_practice）
-  ├── core/               # 核心基础设施
-  │   ├── __init__.py
-  │   ├── llm.py          # LLM 客户端（LLMClient 协议 + practiceLLM + stream_chunks 流式块生成器 + LLM 调用缓存）
-  │   ├── cache.py        # 缓存层（SafeFullCache：TTL 淘汰 + 容量限制 + 一致性更新，被 RAG/GSSC/Note/Terminal 复用）
-  │   ├── storage.py      # PostgreSQL 存储后端（PostgreSQLBackend：JSONB + pgvector + 自动降级）
-  │   └── streaming.py    # SSE 流式输出（SSEEvent 协议 + stream_agent + SSEClientStream + HTTP 演示）
-  ├── agents/             # Agent 实现
-  │   ├── __init__.py
-  │   ├── framework/                # Agent 基础设施层
-  │   │   ├── __init__.py
-  │   │   ├── agent_framework.py    # Agent 统一框架（BaseAgent + AgentRegistry + AgentFactory + AgentAdapter + Message）
-  │   │   ├── agent_router.py       # Agent 智能路由（LLM 分类 + 关键词规则两级路由 + 兜底）
-  │   │   ├── agent_trace.py        # Agent 级执行轨迹（TraceLogger：LLM/工具事件 + 失败链 + JSONL）
-  │   │   └── session_store.py      # 会话持久化（SQLite：会话元信息 + 消息历史 + 断点续聊）
-  │   ├── simple_agent.py          # 简单聊天 Agent
-  │   ├── ReAct_agent.py           # ReAct 推理行动 Agent
-  │   ├── Reflection_agent.py      # 反思改进 Agent
-  │   ├── plan_and_solve_agent.py  # 规划执行 Agent
-  │   ├── function_call_agent.py   # 原生函数调用 Agent
-  │   └── TreeOfThought_agent.py   # Tree-of-Thought 搜索 Agent
-  ├── tools/              # 工具系统（按功能分组）
-  │   ├── __init__.py
-  │   ├── framework/              # 工具框架
-  │   │   ├── __init__.py
-  │   │   ├── tool_system.py           # 统一工具系统（Tool/ToolParameter/ToolRegistry + ToolResponse/熔断器/双协议）
-  │   │   ├── tool_response.py         # ToolResponse 结构化返回协议（status/output/data/error）
-  │   │   ├── circuit_breaker.py       # 熔断器（CLOSED/OPEN/HALF_OPEN 三态 + 装饰器）
-  │   │   ├── tool_filter.py           # 工具过滤（ToolFilter：按 Agent 角色 allow/deny 裁剪可见工具）
-  │   │   ├── sub_agent_tool.py        # 子代理委派工具（SubAgentTool：task+agent_type + 嵌套深度保护）
-  │   │   ├── registry_factory.py      # 一键装配工厂（build_all_tools_registry：8 分组 11 工具 + 角色策略）
-  │   │   ├── tool_chain_manager.py    # 工具链管理器
-  │   │   └── async_tool_executor.py   # 异步工具执行器
-  │   ├── context/               # 上下文构建
-  │   │   ├── __init__.py
-  │   │   ├── context_builder.py       # 上下文构建器（ContextPacket + ContextConfig）
-  │   │   ├── context_monitor.py       # 上下文构建监控日志（JSONL + 聚合统计）
-  │   │   └── gs_sc_pipeline.py        # GSSC 流水线（Gather→Select→Structure→Compress）
-  │   ├── memory/                # 记忆系统（外部记忆）
-  │   │   ├── __init__.py
-  │   │   ├── memory_tool.py           # 记忆工具（工作/情景/语义/感知记忆 + MemoryManager）
-  │   │   ├── note_tool.py             # 结构化笔记工具（Markdown+YAML + 分级缓存）
-  │   │   └── note_context_bridge.py   # NoteTool×ContextBuilder 桥接（类型加权）
-  │   ├── terminal/              # 终端工具
-  │   │   ├── __init__.py
-  │   │   ├── terminal_tool.py         # 安全终端工具（白名单+沙箱+超时+输出限制）
-  │   │   └── smart_terminal.py        # 协同终端（Terminal×Memory×Note×ContextBuilder）
-  │   ├── search/                # 搜索工具
-  │   │   ├── __init__.py
-  │   │   ├── advanced_search_tool.py  # 多源搜索工具（博查+Tavily）
-  │   │   └── search_registry.py       # 搜索工具注册表
-  │   ├── rag/                   # RAG 检索增强
-  │   │   ├── __init__.py
-  │   │   └── rag_tool.py              # RAG 工具（转换/分块/混合检索/增强问答/缓存）
-  ├── tests/              # pytest 单元测试（66 个用例，无网络依赖）
+  ├── src/                          # 主源代码
+  │   ├── agents/                   # Agent 实现
+  │   │   ├── framework/            # Agent 基础设施层
+  │   │   │   ├── agent_framework.py    # Agent 统一框架
+│   │   │   ├── agent_router.py       # Agent 智能路由
+│   │   │   ├── agent_trace.py        # Agent 级执行轨迹
+│   │   │   ├── memory_engine.py      # 自动记忆引擎（检索+存储）
+│   │   │   └── session_store.py      # 会话持久化
+  │   │   ├── simple_agent.py          # 简单聊天 Agent
+  │   │   ├── ReAct_agent.py           # ReAct 推理行动 Agent
+  │   │   ├── Reflection_agent.py      # 反思改进 Agent
+  │   │   ├── plan_and_solve_agent.py  # 规划执行 Agent
+  │   │   ├── function_call_agent.py   # 原生函数调用 Agent
+  │   │   └── TreeOfThought_agent.py   # Tree-of-Thought 搜索 Agent
+  │   ├── core/                   # 核心基础设施
+  │   │   ├── llm.py              # LLM 客户端
+  │   │   ├── cache.py            # 缓存层
+  │   │   ├── storage.py          # 存储后端
+  │   │   └── streaming.py        # SSE 流式输出
+  │   ├── tools/                  # 工具系统
+  │   │   ├── framework/          # 工具框架
+  │   │   │   ├── tool_system.py       # 统一工具系统
+  │   │   │   ├── tool_response.py     # 结构化返回协议
+  │   │   │   ├── circuit_breaker.py   # 熔断器
+  │   │   │   ├── tool_filter.py       # 工具过滤
+  │   │   │   ├── sub_agent_tool.py    # 子代理委派工具
+  │   │   │   ├── registry_factory.py  # 一键装配工厂
+  │   │   │   ├── tool_chain_manager.py    # 工具链管理器
+  │   │   │   └── async_tool_executor.py   # 异步工具执行器
+  │   │   ├── context/            # 上下文构建
+  │   │   │   ├── context_builder.py
+  │   │   │   ├── context_monitor.py
+  │   │   │   └── gs_sc_pipeline.py
+  │   │   ├── memory/             # 记忆系统
+  │   │   │   ├── memory_tool.py
+  │   │   │   ├── note_tool.py
+  │   │   │   └── note_context_bridge.py
+  │   │   ├── terminal/           # 终端工具
+  │   │   │   ├── terminal_tool.py
+  │   │   │   └── smart_terminal.py
+  │   │   └── search/             # 搜索工具
+  │   │       ├── advanced_search_tool.py
+  │   │       └── search_registry.py
+  │   │   ├── rag/                # RAG 检索增强
+  │   │   │   ├── rag_tool.py          # 自研 RAG 工具
+  │   │   │   ├── llamaindex_tool.py   # LlamaIndexRAGTool
+  │   │   │   └── llamaindex/          # LlamaIndex 集成管线
+  │   │   │       ├── adapters.py
+  │   │   │       ├── qwen_client.py
+  │   │   │       ├── poc.py
+  │   │   │       ├── retrievers.py
+  │   │   │       ├── transforms.py
+  │   │   │       ├── structured_index.py  # 结构化索引：元数据抽取 + GIN 索引 + 先筛后查
+  │   │   │       ├── query_parser.py      # 查询解析器：从自然语言提取过滤条件
+  │   │   │       ├── run_qa.py
+  │   │   │       └── logging.py
+  │   │   └── structured_data/    # 结构化数据（表格）查询工具
+  │   │       ├── __init__.py
+  │   │       ├── db_schema.py        # 数据库元数据自动检测
+  │   │       ├── sql_executor.py     # 自然语言 → SQL → 结果
+  │   │       └── structured_data_tool.py  # StructuredDataTool 工具类
+  │   │   └── vl_media/           # 多模态媒体分析工具（qwen-vl-plus）
+  │   │       ├── __init__.py
+  │   │       ├── vl_client.py        # VL 客户端：图像/视频/混合分析
+  │   │       └── vl_media_tool.py    # VLMediaTool 工具类
+  │   └── skills/                  # Skills 知识外化系统
+  │       ├── loader.py
+  │       ├── skill_tool.py
+  │       └── builtin/
+  ├── tests/                # 测试
+  │   ├── conftest.py
   │   ├── test_agent_framework.py
   │   ├── test_agent_trace.py
   │   ├── test_circuit_breaker.py
-  │   ├── test_multimodal_embedding.py  # 多模态嵌入功能验证（纯文本/图片/融合/余弦相似度）
-  │   ├── test_pg_vector.py            # PostgreSQL JSONB + pgvector 存储后端验证（6 项测试）
+  │   ├── test_llamaindex_tool.py
+  │   ├── test_llamaindex_concurrent.py
+  │   ├── test_multimodal_embedding.py
+  │   ├── test_pg_vector.py
   │   ├── test_registry_factory.py
   │   ├── test_session_store.py
   │   ├── test_skill_loader.py
-  │   ├── test_throttle.py          # 防重试节流机制（9 个用例）
+  │   ├── test_throttle.py
   │   ├── test_tool_filter.py
   │   └── test_tool_response.py
-  ├── docs/               # 文档（README / architecture / usage）
-  ├── examples/           # 示例代码（5 个可运行示例 + README 索引）
-  ├── .env                # 环境变量配置
-  ├── .dockerignore       # Docker 构建上下文排除规则
-  ├── Dockerfile          # Docker 镜像构建（python:3.12-slim + uv + /opt/venv）
-  ├── docker-compose.yml  # Docker 编排（bind mount + env_file + 交互式终端）
-  ├── run.py              # Agent 启动器（交互会话 / 单次执行 / --type / --auto 路由 / --stream 流式 / --session 持久化 / --demo）
-  ├── pyproject.toml      # 项目依赖配置
-  ├── uv.lock            # 依赖锁定文件
-  └── CHANGELOG.txt       # 本变更记录
+  │   ├── unit/                   # 单元测试
+  │   │   ├── test_memory_engine.py          # 自动记忆引擎单元测试
+  │   │   └── test_structured_data_tool.py   # 结构化数据查询工具单元测试
+  ├── config/              # 基础设施配置
+  │   ├── Dockerfile
+  │   └── docker-compose.yml
+  ├── docs/                # 文档
+  ├── examples/            # 示例代码
+  ├── .env                 # 环境变量配置
+  ├── .gitignore
+  ├── run.py               # Agent 启动器
+  ├── pyproject.toml       # 项目依赖配置
+  ├── CHANGELOG.txt        # 本变更记录
+  └── README.md
 ================================================================

@@ -1,4 +1,4 @@
-"""run.py — Agent 启动器（运行文件）
+﻿"""run.py — Agent 启动器（运行文件）
 
 激活并运行项目中的 Agent（基于统一框架 BaseAgent + AgentFactory + AgentRegistry）。
 
@@ -18,6 +18,9 @@
     /type <名称> 切换当前 Agent
     /auto        切换智能路由模式（自动选择 Agent）
     /status      查看当前 Agent 元信息
+    /image <路径> 分析图片（支持 jpg/png/gif/bmp/webp）
+    /img <路径>   /image 的别名
+    /file <路径>  读取文档（PDF/Word/Excel/PPT/文本/代码等）
     /exit        退出
 
 说明: 真实 Agent 需要 .env 中的 LLM_MODEL_ID / LLM_API_KEY / LLM_BASE_URL；
@@ -29,11 +32,11 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agents.framework.agent_framework import (
+from src.agents.framework.agent_framework import (
     AgentFactory, AgentRegistry, BaseAgent, AgentAdapter, AgentMeta, AgentResult,
 )
-from agents.framework.agent_router import AgentRouter
-from agents.framework.session_store import SessionStore
+from src.agents.framework.agent_router import AgentRouter
+from src.agents.framework.session_store import SessionStore
 
 # ============================================================
 # Agent 类型注册
@@ -77,7 +80,7 @@ class StreamAgent(BaseAgent):
         return "".join(self._stream(input_text, **kwargs))
 
     def _stream(self, input_text: str, **kwargs):
-        from core.llm import practiceLLM
+        from src.core.llm import practiceLLM
         llm = practiceLLM()
         yield from llm.stream_chunks(
             [{"role": "user", "content": input_text}], temperature=0)
@@ -111,8 +114,8 @@ class SimpleAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.simple_agent import SimpleAgent
-        from core.llm import practiceLLM
+        from src.agents.simple_agent import SimpleAgent
+        from src.core.llm import practiceLLM
         return SimpleAgent(name=name, llm=practiceLLM(), **kwargs)
 
 
@@ -122,8 +125,8 @@ class ReActAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.ReAct_agent import ReActAgent
-        from core.llm import practiceLLM
+        from src.agents.ReAct_agent import ReActAgent
+        from src.core.llm import practiceLLM
         return ReActAgent(llm=practiceLLM(), **kwargs)   # 构造函数无 name 参数
 
 
@@ -133,7 +136,7 @@ class ReflectionAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.Reflection_agent import ReflectionAgent
+        from src.agents.Reflection_agent import ReflectionAgent
         return ReflectionAgent(name=name, **kwargs)
 
 
@@ -143,8 +146,8 @@ class PlanAndSolveAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.plan_and_solve_agent import PlanAndSolveAgent
-        from core.llm import practiceLLM
+        from src.agents.plan_and_solve_agent import PlanAndSolveAgent
+        from src.core.llm import practiceLLM
         return PlanAndSolveAgent(llm=practiceLLM(), name=name, **kwargs)
 
 
@@ -154,9 +157,9 @@ class FunctionCallAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.function_call_agent import FunctionCallAgent
-        from core.llm import practiceLLM
-        from tools.framework.registry_factory import (
+        from src.agents.function_call_agent import FunctionCallAgent
+        from src.core.llm import practiceLLM
+        from src.tools.framework.registry_factory import (
             build_all_tools_registry, build_role_tool_filter)
         # 全量装配（analyst 角色）+ 角色过滤视图 → 传给 Agent 的工具列表
         bundle = build_all_tools_registry(tool_filter=build_role_tool_filter(),
@@ -174,7 +177,7 @@ class TreeOfThoughtAgentWrapper(_RealAgentAdapter):
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
-        from agents.TreeOfThought_agent import TreeOfThoughtAgent
+        from src.agents.TreeOfThought_agent import TreeOfThoughtAgent
         return TreeOfThoughtAgent(name=name, **kwargs)
 
 
@@ -306,6 +309,129 @@ def stream_once(registry: AgentRegistry, agent_type: str, question: str):
     print()
 
 
+# ============================================================
+# 终端图片处理（/image 命令）
+# ============================================================
+
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+
+
+def _handle_image_cmd(path: str) -> str:
+    """分析图片文件，返回文本描述。
+
+    Args:
+        path: 图片文件路径
+
+    Returns:
+        分析结果文本（成功 = 描述内容，失败 = 错误信息）
+    """
+    # 1. 展开路径中的引号并检查是否存在
+    path = path.strip("\"' ")
+    if not os.path.exists(path):
+        return f"❌ 文件不存在: {path}"
+    if not os.path.isfile(path):
+        return f"❌ 路径不是文件: {path}"
+
+    # 2. 检查文件扩展名
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        return (f"❌ 不支持的文件格式: {ext}，"
+                f"支持: {', '.join(sorted(_IMAGE_EXTENSIONS))}")
+
+    # 3. 检查文件大小（限制 10MB）
+    fsize = os.path.getsize(path)
+    if fsize > 10 * 1024 * 1024:
+        return f"❌ 文件过大 ({fsize / 1024 / 1024:.1f}MB)，限制 10MB"
+
+    # 4. 初始化 VL 客户端并分析
+    try:
+        from src.tools.vl_media.vl_media_tool import VLMediaTool
+        tool = VLMediaTool()
+        result = tool.run({
+            "action": "analyze_image",
+            "file_path": path,
+            "prompt": "请详细描述这张图片的内容，包括主体、背景、颜色、文字等所有可见信息。",
+        })
+        return result
+    except Exception as e:
+        return f"❌ 图片分析失败: {e}"
+
+
+# ============================================================
+# 终端文件读取（/file 命令）
+# ============================================================
+
+_SUPPORTED_DOC_EXTENSIONS = {
+    ".txt", ".log", ".md", ".markdown",
+    ".pdf",
+    ".doc", ".docx",
+    ".xls", ".xlsx", ".csv",
+    ".ppt", ".pptx",
+    ".json", ".xml", ".yaml", ".yml",
+    ".py", ".js", ".ts", ".java", ".go", ".c", ".cpp", ".rs", ".sql",
+}
+
+_MAX_FILE_OUTPUT_CHARS = 5000  # 终端输出截断长度
+
+
+def _handle_file_cmd(path: str) -> str:
+    """读取文档文件，返回文本内容。
+
+    Args:
+        path: 文件路径（PDF/Word/Excel/PPT/文本/代码等）
+
+    Returns:
+        提取的文本内容（超长自动截断）
+    """
+    path = path.strip("\"' ")
+    if not os.path.exists(path):
+        return f"❌ 文件不存在: {path}"
+    if not os.path.isfile(path):
+        return f"❌ 路径不是文件: {path}"
+
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _SUPPORTED_DOC_EXTENSIONS:
+        return (f"❌ 不支持的文件格式: {ext}，"
+                f"支持: {', '.join(sorted(_SUPPORTED_DOC_EXTENSIONS))}")
+
+    fsize = os.path.getsize(path)
+    if fsize > 50 * 1024 * 1024:
+        return f"❌ 文件过大 ({fsize / 1024 / 1024:.1f}MB)，限制 50MB"
+
+    try:
+        from src.tools.rag.rag_tool import DocumentLoader
+        loader = DocumentLoader()
+        doc_meta, blocks = loader.load(path)
+    except Exception as e:
+        return f"❌ 文件读取失败: {e}"
+
+    # 组装输出
+    lines = [f"📄 {doc_meta['name']}"]
+    lines.append(f"   类型: {doc_meta['doc_type']}  |  大小: "
+                 f"{doc_meta['size'] / 1024:.1f} KB")
+    lines.append(f"   转换器: {doc_meta.get('converter', 'unknown')}")
+    lines.append(f"   分块数: {len(blocks)}")
+    lines.append("")
+
+    total_chars = 0
+    for i, block in enumerate(blocks, 1):
+        content = block["content"].strip()
+        if not content:
+            continue
+        section = block["metadata"].get("section", "")
+        header = f"--- 块 {i}" + (f" [{section}]" if section else "") + " ---"
+        lines.append(header)
+        lines.append(content)
+
+        total_chars += len(content)
+        if total_chars > _MAX_FILE_OUTPUT_CHARS:
+            lines.append("")
+            lines.append(f"... (已截断，仅显示前 {_MAX_FILE_OUTPUT_CHARS} 字符)")
+            break
+
+    return "\n".join(lines)
+
+
 def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
          auto_mode: bool = False, router: AgentRouter = None,
          session_store: SessionStore = None, session_id: str = None):
@@ -331,6 +457,8 @@ def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
             break
         if text == "/help":
             print("命令: /help /agents /type <名称> /auto /status /exit")
+            print("      /image <路径> 或 /img <路径>  分析图片")
+            print("      /file <路径>                 读取文档")
             continue
         if text == "/agents":
             print(f"已注册 Agent: {registry.list_agents()}")
@@ -338,7 +466,7 @@ def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
             continue
         if text == "/sessions":
             if session_store is None:
-                print("⚠️ 当前未启用会话持久化（启动时加 --session <id>）")
+                print("⚠️ 会话存储未初始化，无法列出会话")
                 continue
             sessions = session_store.list_sessions(limit=10)
             if not sessions:
@@ -381,6 +509,18 @@ def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
             auto = False
             print(f"✅ 已切换到 Agent 类型: {t}（智能路由已关闭）")
             continue
+        if text.startswith("/image ") or text.startswith("/img "):
+            path = text.split(" ", 1)[1].strip()
+            print(f"🖼️ 正在分析图片: {path}")
+            result = _handle_image_cmd(path)
+            print(f"\n📝 分析结果:\n{result}")
+            continue
+        if text.startswith("/file "):
+            path = text.split(" ", 1)[1].strip()
+            print(f"📄 正在读取文件: {path}")
+            result = _handle_file_cmd(path)
+            print(f"\n{result}")
+            continue
         if text.startswith("/"):
             print(f"❌ 未知命令: {text}（输入 /help 查看命令）")
             continue
@@ -417,7 +557,7 @@ def main(argv: list) -> int:
     demo_only = "--demo" in flags
     auto_mode = "--auto" in flags
     stream_mode = "--stream" in flags
-    # 会话持久化：--session <id> 指定（或复用）会话
+    # 会话持久化：--session <id> 指定（或复用）会话；未指定时无状态
     session_id = None
     if "--session" in argv:
         idx = argv.index("--session")
@@ -430,6 +570,8 @@ def main(argv: list) -> int:
         exists = session_store.get_session(session_id)
         print(f"💾 会话持久化: {session_id}"
               f"{'（恢复历史 ' + str(exists['message_count']) + ' 条消息）' if exists else '（新建）'}")
+    else:
+        print("💡 提示: 加 --session <id> 可启用断点续聊" if not demo_only else "")
 
     factory, registry, default = build_agents(demo_only=demo_only)
     # 智能路由（auto 模式）：LLM 可用时优先 LLM 分类，否则关键词规则

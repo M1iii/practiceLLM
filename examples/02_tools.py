@@ -1,4 +1,4 @@
-"""示例 02：工具系统（ToolResponse + 熔断器 + 过滤 + 子代理）。
+﻿"""示例 02：工具系统（ToolResponse + 熔断器 + 过滤 + 子代理）。
 
 运行: python examples/02_tools.py
 """
@@ -7,10 +7,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.framework.tool_system import ToolRegistry, ToolParameter
-from tools.framework.tool_filter import ToolFilter
-from tools.framework.sub_agent_tool import SubAgentTool
-from agents.framework.agent_framework import BaseAgent, AgentFactory
+from src.tools.framework.tool_system import ToolRegistry, ToolParameter
+from src.tools.framework.tool_filter import ToolFilter
+from src.tools.framework.sub_agent_tool import SubAgentTool
+from src.agents.framework.agent_framework import BaseAgent, AgentFactory
 
 
 def add(a, b):
