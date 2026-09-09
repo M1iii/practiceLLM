@@ -491,13 +491,6 @@ def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
             continue
         if text == "/auto":
             auto = not auto
-            if auto and router is None:
-                from dotenv import load_dotenv
-                load_dotenv()
-                llm_ok = bool(os.getenv("LLM_MODEL_ID") and os.getenv("LLM_API_KEY")
-                              and os.getenv("LLM_BASE_URL"))
-                router = AgentRouter(factory, llm_available=llm_ok, use_llm=llm_ok,
-                                     default_type=default_type)
             print(f"✅ 智能路由已{'开启' if auto else '关闭'}"
                   f"（当前 Agent: {active}）")
             continue
@@ -584,13 +577,12 @@ def main(argv: list) -> int:
         print("💡 提示: 加 --session <id> 可启用断点续聊" if not demo_only else "")
 
     factory, registry, default = build_agents(demo_only=demo_only)
-    # 智能路由：默认开启，自动选择最合适的 Agent
-    from dotenv import load_dotenv
-    load_dotenv()
-    llm_ok = bool(os.getenv("LLM_MODEL_ID") and os.getenv("LLM_API_KEY")
-                  and os.getenv("LLM_BASE_URL"))
-    router = AgentRouter(factory, default_type=default)
-    print(f"🧭 智能路由已启用（特征收敛域路由，兜底 {default}）")
+    # 智能路由：默认开启，--type 可关闭
+    router = AgentRouter(factory, default_type=default) if not agent_type else None
+    if router:
+        print(f"🧭 智能路由已启用（特征收敛域路由，兜底 {default}）")
+    else:
+        print(f"🧭 智能路由已关闭（指定 --type {agent_type}）")
 
     if "--list" in flags:
         print("📋 可用 Agent 类型:")
@@ -608,7 +600,7 @@ def main(argv: list) -> int:
                  session_store=session_store, session_id=session_id)
         stream_once(registry, target, args[0])
         return 0
-    # 单次执行：路由模式优先（--auto 覆盖 --type）
+    # 单次执行
     if args:
         if router is not None:
             run_once(registry, default, args[0], factory=factory, router=router,
@@ -624,6 +616,7 @@ def main(argv: list) -> int:
     activate(factory, registry, target,
              session_store=session_store, session_id=session_id)
     repl(registry, target, factory, router=router,
+         auto_mode=(router is not None),
          session_store=session_store, session_id=session_id)
     return 0
 

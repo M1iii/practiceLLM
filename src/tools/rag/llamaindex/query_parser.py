@@ -86,7 +86,7 @@ class QueryParser:
     def _extract_doc_type(self, query_lower: str) -> Optional[str]:
         scores: Dict[str, int] = {}
         for dtype, patterns in self.DOC_TYPE_PATTERNS.items():
-            score = sum(1 for p in patterns if p in query_lower)
+            score = sum(1 for p in patterns if p.lower() in query_lower)
             if score > 0:
                 scores[dtype] = score
 
@@ -109,7 +109,7 @@ class QueryParser:
             patterns = self.DOC_TYPE_PATTERNS[doc_type]
             cleaned = query
             for p in patterns:
-                cleaned = cleaned.replace(p, "")
+                cleaned = re.sub(re.escape(p), '', cleaned, flags=re.IGNORECASE)
             # 清理多余空格
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()
             # 如果清理后为空，返回原查询

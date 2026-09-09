@@ -132,7 +132,7 @@ class Executor:
         prompt = prompt.replace("{history}", self._format_history())
         prompt = prompt.replace("{current_step}", current_step)
 
-        if self.tool_registry and not stream:
+        if self.tool_registry:
             return self._invoke_with_tools(prompt)
         return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
 
@@ -162,6 +162,13 @@ class Executor:
             if not msg.tool_calls:
                 return msg.content or ""
 
+            # 追加完整的 assistant 消息（含所有 tool_calls）
+            messages.append({"role": "assistant", "content": None,
+                             "tool_calls": [{"id": tc.id, "type": "function",
+                                             "function": {"name": tc.function.name,
+                                                          "arguments": tc.function.arguments}}
+                                            for tc in msg.tool_calls]})
+
             for tc in msg.tool_calls:
                 fn_name = tc.function.name
                 try:
@@ -170,8 +177,6 @@ class Executor:
                     fn_args = {}
                 result = self.tool_registry.execute_structured(fn_name, fn_args)
                 output = result.output if hasattr(result, "output") else str(result)
-                messages.append({"role": "assistant", "content": None,
-                                 "tool_calls": [tc]})
                 messages.append({"role": "tool", "tool_call_id": tc.id,
                                  "content": str(output)})
                 print(f"🔧 {fn_name}({fn_args}) → {str(output)[:80]}")

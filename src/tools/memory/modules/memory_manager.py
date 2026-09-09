@@ -76,6 +76,7 @@ class MemoryManager:
         重建条件：
           - 语义记忆：importance >= 0.8（与深层固化阈值一致）
           - 感知记忆：modality 不为 text/None/""（有非文本模态标记）
+        重建方式：增量添加，不覆盖已有 DB 数据。
         """
         episodic = self._modules.get("episodic")
         if episodic is None:
@@ -88,19 +89,29 @@ class MemoryManager:
         if not all_entries:
             return
 
-        # 语义记忆重建：高重要性条目
-        if semantic is not None:
-            semantic_entries = [m for m in all_entries
-                               if m.importance >= 0.8]
-            if semantic_entries:
-                semantic.set_memories(semantic_entries)
+        try:
+            # 语义记忆重建：高重要性条目（增量添加，不覆盖已有数据）
+            if semantic is not None:
+                existing_ids = {m.memory_id for m in semantic.get_all()}
+                semantic_entries = [m for m in all_entries
+                                    if m.importance >= 0.8
+                                    and m.memory_id not in existing_ids]
+                for entry in semantic_entries:
+                    entry.memory_type = "semantic"
+                    semantic.add(entry)
 
-        # 感知记忆重建：非文本模态条目
-        if perceptual is not None:
-            perceptual_entries = [m for m in all_entries
-                                 if m.modality and m.modality != "text"]
-            if perceptual_entries:
-                perceptual.set_memories(perceptual_entries)
+            # 感知记忆重建：非文本模态条目
+            if perceptual is not None:
+                existing_ids = {m.memory_id for m in perceptual.get_all()}
+                perceptual_entries = [m for m in all_entries
+                                      if m.modality and m.modality != "text"
+                                      and m.memory_id not in existing_ids]
+                for entry in perceptual_entries:
+                    entry.memory_type = "perceptual"
+                    perceptual.add(entry)
+        except Exception as e:
+            import sys
+            print(f"[MemoryManager] 重建语义/感知记忆失败: {e}", file=sys.stderr)
 
     # --- 模块查询 ---
 
@@ -172,5 +183,8 @@ class MemoryManager:
     def close(self):
         """关闭所有模块的资源连接（如数据库）。"""
         for module in self._modules.values():
-            if hasattr(module, 'close') and callable(module.close):
-                module.close()
+            try:
+                if hasattr(module, 'close') and callable(module.close):
+                    module.close()
+            except Exception:
+                pass

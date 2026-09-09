@@ -186,6 +186,13 @@ class ReflectionAgent:
             if not msg.tool_calls:
                 return msg.content or ""
 
+            # 追加完整的 assistant 消息（含所有 tool_calls）
+            messages.append({"role": "assistant", "content": None,
+                             "tool_calls": [{"id": tc.id, "type": "function",
+                                             "function": {"name": tc.function.name,
+                                                          "arguments": tc.function.arguments}}
+                                            for tc in msg.tool_calls]})
+
             # 执行工具调用
             for tc in msg.tool_calls:
                 fn_name = tc.function.name
@@ -195,8 +202,6 @@ class ReflectionAgent:
                     fn_args = {}
                 result = self.tool_registry.execute_structured(fn_name, fn_args)
                 output = result.output if hasattr(result, "output") else str(result)
-                messages.append({"role": "assistant", "content": None,
-                                 "tool_calls": [tc]})
                 messages.append({"role": "tool", "tool_call_id": tc.id,
                                  "content": str(output)})
                 print(f"🔧 {fn_name}({fn_args}) → {str(output)[:80]}")
@@ -212,7 +217,7 @@ class ReflectionAgent:
     def _initial(self, task: str, stream: bool = False) -> str:
         """阶段一：生成初始回答（工具可用时自动调用工具获取信息）。"""
         prompt = self._build_prompt(self.INITIAL_PROMPT, task=task)
-        if self.tool_registry and not stream:
+        if self.tool_registry:
             return self._invoke_with_tools(prompt)
         return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
 
@@ -225,7 +230,7 @@ class ReflectionAgent:
     def _refine(self, task: str, last_attempt: str, feedback: str, stream: bool = False) -> str:
         """阶段三：根据反馈改进回答（工具可用时自动调用工具核查事实）。"""
         prompt = self._build_prompt(self.REFINE_PROMPT, task=task, last_attempt=last_attempt, feedback=feedback)
-        if self.tool_registry and not stream:
+        if self.tool_registry:
             return self._invoke_with_tools(prompt)
         return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
 

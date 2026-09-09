@@ -76,6 +76,7 @@ def get_pgvector_store(args) -> PGVectorStore:
         engine = create_engine(url)
         with engine.connect() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {args.table_name}"))
+            conn.execute(text(f"DROP TABLE IF EXISTS data_{args.table_name}"))
             conn.commit()
 
     # 使用 from_params，hnsw_kwargs=None 跳过索引创建
@@ -229,7 +230,7 @@ def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
     else:
         print("  未发现图片或图片描述生成失败（跳过）")
 
-    print("\n=" * 60)
+    print("\n" + "=" * 60)
     print("Step 2: 构建 Parent-Child 节点")
     print("=" * 60)
 
@@ -331,7 +332,7 @@ def main():
     print(f"  嵌入维度: {args.embed_dim}")
 
     # 1. 创建嵌入模型
-    print("\n=" * 60)
+    print("\n" + "=" * 60)
     print("Step 0: 初始化组件")
     print("=" * 60)
 

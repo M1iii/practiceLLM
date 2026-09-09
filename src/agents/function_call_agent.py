@@ -130,7 +130,7 @@ class FunctionCallAgent:
     def _track_tool_result(self, function_name: str, result: str):
         """跟踪工具执行结果，更新连续失败计数并决定是否禁用。"""
         # 判断是否失败
-        is_error = result.startswith("错误：") or result.startswith("【搜索不可用】")
+        is_error = result.startswith("错误：") or result.startswith("工具执行失败:") or result.startswith("【搜索不可用】")
         is_terminal = self._is_terminal_error(result)
 
         if is_error:
@@ -190,8 +190,12 @@ class FunctionCallAgent:
             print(f"📍 第 {iteration + 1}/{self.max_iterations} 轮")
             print("─" * 60)
 
-            # 3a. 调用 LLM（带工具）
-            response = self._invoke_with_tools(messages, openai_tools, tool_choice="auto", temperature=temperature)
+            # 3a. 刷新工具列表（移除已禁用的工具）
+            active_tool_names = {t["function"]["name"] for t in openai_tools} - set(self._disabled_tools.keys())
+            available_tools = [t for t in openai_tools if t["function"]["name"] in active_tool_names]
+
+            # 3b. 调用 LLM（带工具）
+            response = self._invoke_with_tools(messages, available_tools, tool_choice="auto", temperature=temperature)
             message = response.choices[0].message
 
             # 3b. 检查是否有工具调用

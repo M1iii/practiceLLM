@@ -161,8 +161,9 @@ class PerceptualMemory(MemoryModule):
 
     def close(self):
         """关闭数据库连接。"""
-        if self._db_path and hasattr(self, '_conn'):
+        if self._db_path and hasattr(self, '_conn') and self._conn:
             self._conn.close()
+            self._conn = None
 
     # ============================================================
     # 增删操作（覆写基类）

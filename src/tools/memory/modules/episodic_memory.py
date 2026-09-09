@@ -78,25 +78,30 @@ class EpisodicMemory(MemoryModule):
         """从 SQLite 加载已有记忆到内存（启动恢复）。"""
         cursor = self._conn.execute("SELECT * FROM episodes")
         for row in cursor:
-            entry = MemoryEntry(
-                memory_id=row[0],
-                content=row[3],
-                memory_type=row[5] or "episodic",
-                importance=row[4] if row[4] is not None else 0.8,
-                timestamp=row[2],
-                session_id=row[1] or "default",
-                file_path=row[7],
-                modality=row[6],
-                metadata=json.loads(row[8]) if row[8] else {},
-            )
-            self._memories.append(entry)
-            self._index_session(entry)
-            # 加载缓存的嵌入向量
-            if len(row) > 9 and row[9]:
-                try:
-                    self._embeddings[entry.memory_id] = json.loads(row[9])
-                except (json.JSONDecodeError, TypeError):
-                    pass
+            try:
+                entry = MemoryEntry(
+                    memory_id=row[0],
+                    content=row[3],
+                    memory_type=row[5] or "episodic",
+                    importance=row[4] if row[4] is not None else 0.8,
+                    timestamp=row[2],
+                    session_id=row[1] or "default",
+                    file_path=row[7],
+                    modality=row[6],
+                    metadata=json.loads(row[8]) if row[8] else {},
+                )
+                self._memories.append(entry)
+                self._index_session(entry)
+                # 加载缓存的嵌入向量
+                if len(row) > 9 and row[9]:
+                    try:
+                        self._embeddings[entry.memory_id] = json.loads(row[9])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            except (json.JSONDecodeError, IndexError, TypeError) as e:
+                import sys
+                print(f"[EpisodicMemory] 跳过损坏的数据行: {e}", file=sys.stderr)
+                continue
         self._conn.commit()
 
     def _persist_episode(self, entry: MemoryEntry,
@@ -174,6 +179,9 @@ class EpisodicMemory(MemoryModule):
 
         if self._pg_backend:
             self._pg_add(entry)
+            vec = self._embedding_client.embed(entry.content)
+            if vec:
+                self._embeddings[entry.memory_id] = vec
         else:
             embedding = self._embedding_client.embed(entry.content)
             if embedding:
@@ -202,16 +210,18 @@ class EpisodicMemory(MemoryModule):
     def clear(self):
         """清空所有记忆（内存 + 数据库）。"""
         self._memories.clear()
+        self._embeddings.clear()
         self.sessions.clear()
         if self._pg_backend:
             self._pg_backend.execute("DELETE FROM episodes")
-        else:
+        elif self._conn:
             self._conn.execute("DELETE FROM episodes")
             self._conn.commit()
 
     def set_memories(self, memories: List[MemoryEntry]):
         """直接替换记忆列表，同步数据库和会话索引。"""
         self._memories = list(memories)
+        self._embeddings.clear()
         self._rebuild_session_index()
         if self._pg_backend:
             self._pg_backend.execute("DELETE FROM episodes")

@@ -88,9 +88,7 @@ class Gatherer:
                custom_packets: Optional[List[ContextPacket]] = None,
                top_k: int = 5) -> List[ContextPacket]:
         """汇集候选信息，返回 ContextPacket 列表（结果走缓存层）。"""
-        cache_key = f"gather:{_fingerprint(
-            query, history or [], system_instruction or "",
-            _packets_to_dicts(custom_packets or []), top_k, self.max_history)}"
+        cache_key = f"gather:{_fingerprint(query, history or [], system_instruction or '', _packets_to_dicts(custom_packets or []), top_k, self.max_history)}"
         if self._cache is not None:
             cached = self._cache.get(cache_key)
             if cached is not None:
@@ -235,8 +233,7 @@ class Selector:
         if available_tokens <= 0:
             return []
 
-        cache_key = f"select:{_fingerprint(query, available_tokens,
-                                           _packets_to_dicts(packets))}"
+        cache_key = f"select:{_fingerprint(query, available_tokens, _packets_to_dicts(packets))}"
         if self._cache is not None:
             cached = self._cache.get(cache_key)
             if cached is not None:
@@ -537,9 +534,7 @@ class GSSCPipeline:
         limit = max_tokens or self.max_tokens
         t0 = time.perf_counter()
 
-        cache_key = f"gssc:{_fingerprint(
-            query, history or [], system_instruction or "", limit,
-            _packets_to_dicts(custom_packets or []))}"
+        cache_key = f"gssc:{_fingerprint(query, history or [], system_instruction or '', limit, _packets_to_dicts(custom_packets or []))}"
         cached = self._cache.get(cache_key)
         if cached is not None:
             result = self._result_from_dict(cached)

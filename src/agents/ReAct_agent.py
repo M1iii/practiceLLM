@@ -25,7 +25,7 @@ class ReActAgent:
 
 Thought：分析当前问题，思考需要所需信息或采取什么行动。
 Action：选择一个行动，格式必须是以下之一：
-- `{{tool_name}}[{{tool_input}}]` - 调用指定工具
+- `{tool_name}[{tool_input}]` - 调用指定工具
 - `Finish[最终答案]` - 当你有足够信息给出最终答案时
 
 ## 重要提醒
@@ -38,7 +38,7 @@ Action：选择一个行动，格式必须是以下之一：
 ## 当前任务
 **Question：**{question}
 
-##执行历史
+## 执行历史
 {history}
 
 现在开始你的推理和行动："""
@@ -51,7 +51,7 @@ Action：选择一个行动，格式必须是以下之一：
         apiKey: str = None,
         baseUrl: str = None,
         timeout: int = None,
-        max_steps: int = 5,
+        max_steps: int = 8,
     ):
         """
         初始化 ReAct Agent。
@@ -168,7 +168,7 @@ Action：选择一个行动，格式必须是以下之一：
         except Exception as e:
             return f"工具执行错误: {e}"
 
-    def run(self, question: str) -> str:
+    def run(self, question: str, stream: bool = False) -> str:
         """
         ReAct 主循环：不断推理 → 行动 → 观察，直到得出最终答案或达到最大步数。
         """

@@ -188,11 +188,10 @@ class SemanticMemory(MemoryModule):
             )
             self._memories.append(entry)
 
-            # 重建 entity_index
-            ent = self.entities.get(entry.content.split(":")[0].strip()
-                                    if ":" in entry.content else "")
-            if ent:
-                self._entity_index.setdefault(entry.memory_id, set()).add(ent.name)
+        # 重建 entity_index：从实体的 memory_ids 反向索引
+        for ent_name, ent_obj in self.entities.items():
+            for mid in ent_obj.memory_ids:
+                self._entity_index.setdefault(mid, set()).add(ent_name)
 
         self._conn.commit()
 
@@ -204,7 +203,6 @@ class SemanticMemory(MemoryModule):
             (entity.entity_id, entity.name, entity.entity_type,
              json.dumps(entity.memory_ids, ensure_ascii=False))
         )
-        self._conn.commit()
 
     def _persist_relation(self, relation: Relation):
         """持久化单条关系。"""
@@ -215,7 +213,6 @@ class SemanticMemory(MemoryModule):
              relation.target_entity, relation.relation_type,
              relation.memory_id, relation.weight)
         )
-        self._conn.commit()
 
     def _persist_embedding(self, memory_id: str, embedding: List[float]):
         """持久化嵌入向量。"""
@@ -294,6 +291,15 @@ class SemanticMemory(MemoryModule):
             self._persist_memory_entry(entry)
             if embedding:
                 self._persist_embedding(entry.memory_id, embedding)
+            for name in matched_names:
+                ent = self.entities.get(name)
+                if ent:
+                    self._persist_entity(ent)
+            for rel in relations:
+                self._persist_relation(rel)
+            for rel in [r for r in self.relations if r.memory_id == entry.memory_id and r not in relations]:
+                self._persist_relation(rel)
+            self._conn.commit()
 
         return ""
 
@@ -348,8 +354,9 @@ class SemanticMemory(MemoryModule):
 
     def close(self):
         """关闭数据库连接。"""
-        if self._db_path and hasattr(self, '_conn'):
+        if self._db_path and hasattr(self, '_conn') and self._conn:
             self._conn.close()
+            self._conn = None
 
     def get_all(self) -> List[MemoryEntry]:
         return list(self._memories)

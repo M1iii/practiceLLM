@@ -353,7 +353,7 @@ class FeatureBasedRouter:
             )
 
         return RouteDecision(
-            self.default_type, "feature", best_score,
+            self.default_type, "fallback", best_score,
             f"无匹配(最高{best_score:.2f}<{MATCH_THRESHOLD})，兜底 {self.default_type}",
         )
 

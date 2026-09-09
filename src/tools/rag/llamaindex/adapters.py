@@ -52,7 +52,8 @@ class DashScopeEmbedding(BaseEmbedding):
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
         results = self._client.embed_batch(texts)
-        return [r for r in results if r is not None]
+        dim = len(results[0]) if results and results[0] is not None else 1024
+        return [r if r is not None else [0.0] * dim for r in results]
 
     async def _aget_text_embedding(self, text: str) -> List[float]:
         return self._get_text_embedding(text)

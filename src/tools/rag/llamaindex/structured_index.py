@@ -380,17 +380,7 @@ class StructuredFilterRetriever:
             print(f"  [StructuredFilterRetriever] 候选节点: {len(candidate_ids)} 个")
 
         # 在候选节点集上做混合检索
-        # 稠密检索：使用 node_id IN 过滤
-        from llama_index.core.retrievers import VectorIndexRetriever
-        from llama_index.core import QueryBundle
-
-        # 使用 PGVectorStore 的 node_id 过滤
-        # 构建过滤后的稠密检索器
-        filtered_dense = self._index.as_retriever(
-            similarity_top_k=min(self.similarity_top_k * 2, len(candidate_ids))
-        )
-
-        # 获取候选节点用于 BM25
+        # 获取所有节点，过滤候选集
         from src.tools.rag.llamaindex.retrievers import _get_all_nodes_from_index
         all_nodes = _get_all_nodes_from_index(self._index)
         filtered_nodes = [n for n in all_nodes if n.node_id in candidate_ids]
@@ -400,6 +390,17 @@ class StructuredFilterRetriever:
                 print("  [StructuredFilterRetriever] 过滤后无节点，回退到全量检索")
             return self._full_retriever.retrieve(query)
 
+        # 稠密检索：在候选节点上做向量检索
+        from llama_index.core.retrievers import VectorIndexRetriever
+        filtered_dense = VectorIndexRetriever(
+            index=self._index,
+            similarity_top_k=min(self.similarity_top_k * 2, len(filtered_nodes)),
+        )
+        # 先用稠密检索获取候选，再按 node_id 过滤
+        dense_results = filtered_dense.retrieve(query)
+        dense_results = [r for r in dense_results if r.node.node_id in candidate_ids]
+
+        # 稀疏检索：BM25 在过滤后的节点上
         sparse_filtered = BM25Retriever.from_defaults(
             nodes=filtered_nodes,
             similarity_top_k=min(self.similarity_top_k * 2, len(filtered_nodes)),

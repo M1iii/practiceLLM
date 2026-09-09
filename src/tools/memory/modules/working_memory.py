@@ -7,7 +7,6 @@ WorkingMemory：工作记忆模块
 
 import re
 import math
-import re
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
