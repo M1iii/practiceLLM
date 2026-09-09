@@ -3,10 +3,9 @@
 激活并运行项目中的 Agent（基于统一框架 BaseAgent + AgentFactory + AgentRegistry）。
 
 用法:
-    python run.py                     # 交互式会话（激活默认 Agent）
-    python run.py "你的问题"          # 单次执行（默认 Agent）
-    python run.py --type react "问题" # 指定 Agent 类型执行
-    python run.py --auto "问题"       # 智能路由（自动选择最合适的 Agent）
+    python run.py                     # 交互式会话（智能路由默认开启）
+    python run.py "你的问题"          # 单次执行（智能路由自动选择 Agent）
+    python run.py --type react "问题" # 指定 Agent 类型执行（关闭智能路由）
     python run.py --stream "问题"     # SSE 流式输出（token 级实时）
     python run.py --session <id>      # 会话持久化（断点续聊）
     python run.py --list              # 列出可用 Agent 类型
@@ -15,8 +14,8 @@
 交互会话命令:
     /help        显示帮助
     /agents      列出已注册 Agent
-    /type <名称> 切换当前 Agent
-    /auto        切换智能路由模式（自动选择 Agent）
+    /type <名称> 切换当前 Agent（关闭智能路由）
+    /auto        切换智能路由模式开关
     /status      查看当前 Agent 元信息
     /image <路径> 分析图片（支持 jpg/png/gif/bmp/webp）
     /img <路径>   /image 的别名
@@ -110,45 +109,60 @@ class _RealAgentAdapter(AgentAdapter):
 
 class SimpleAgentWrapper(_RealAgentAdapter):
     AGENT_TYPE = "simple"
-    DESCRIPTION = "简单聊天 Agent（日常对话 + 可选工具调用）"
+    DESCRIPTION = "简单聊天 Agent（日常对话 + 基础工具调用）"
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
         from src.agents.simple_agent import SimpleAgent
         from src.core.llm import practiceLLM
-        return SimpleAgent(name=name, llm=practiceLLM(), **kwargs)
+        from src.tools.framework.registry_factory import build_all_tools_registry
+        bundle = build_all_tools_registry(include=["basic"])
+        return SimpleAgent(name=name, llm=practiceLLM(),
+                           tools=bundle.registry.get_tools(),
+                           enable_tool_calling=True, **kwargs)
 
 
 class ReActAgentWrapper(_RealAgentAdapter):
     AGENT_TYPE = "react"
-    DESCRIPTION = "ReAct 推理行动 Agent"
+    DESCRIPTION = "ReAct 推理行动 Agent（搜索/终端/VL 多工具）"
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
         from src.agents.ReAct_agent import ReActAgent
         from src.core.llm import practiceLLM
-        return ReActAgent(llm=practiceLLM(), **kwargs)   # 构造函数无 name 参数
+        from src.tools.framework.registry_factory import build_all_tools_registry
+        bundle = build_all_tools_registry(include=["basic", "search", "terminal",
+                                                     "vl_media"])
+        return ReActAgent(llm=practiceLLM(),
+                          tools=bundle.registry.get_tools(),
+                          max_steps=8, **kwargs)
 
 
 class ReflectionAgentWrapper(_RealAgentAdapter):
     AGENT_TYPE = "reflection"
-    DESCRIPTION = "反思改进 Agent"
+    DESCRIPTION = "反思改进 Agent（搜索/记忆/RAG 事实核查）"
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
         from src.agents.Reflection_agent import ReflectionAgent
-        return ReflectionAgent(name=name, **kwargs)
+        from src.tools.framework.registry_factory import build_all_tools_registry
+        bundle = build_all_tools_registry(include=["search", "rag", "memory", "note"])
+        return ReflectionAgent(name=name, tools=bundle.registry.get_tools(), **kwargs)
 
 
 class PlanAndSolveAgentWrapper(_RealAgentAdapter):
     AGENT_TYPE = "plan_and_solve"
-    DESCRIPTION = "规划执行 Agent"
+    DESCRIPTION = "规划执行 Agent（搜索/RAG/结构化数据/子代理）"
     VERSION = "1.0.0"
 
     def _build_agent(self, name, **kwargs):
         from src.agents.plan_and_solve_agent import PlanAndSolveAgent
         from src.core.llm import practiceLLM
-        return PlanAndSolveAgent(llm=practiceLLM(), name=name, **kwargs)
+        from src.tools.framework.registry_factory import build_all_tools_registry
+        bundle = build_all_tools_registry(include=["search", "rag", "structured_data",
+                                                     "subagent"])
+        return PlanAndSolveAgent(llm=practiceLLM(), name=name,
+                                 tools=bundle.registry.get_tools(), **kwargs)
 
 
 class FunctionCallAgentWrapper(_RealAgentAdapter):
@@ -433,14 +447,14 @@ def _handle_file_cmd(path: str) -> str:
 
 
 def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
-         auto_mode: bool = False, router: AgentRouter = None,
+         auto_mode: bool = True, router: AgentRouter = None,
          session_store: SessionStore = None, session_id: str = None):
     """交互式会话（auto_mode 时启用智能路由；session_id 时持久化）。"""
     active = default_type
     auto = auto_mode
     print("\n" + "=" * 60)
     print("🧠 Agent 交互会话已启动（输入 /help 查看命令，/exit 退出）")
-    print(f"   智能路由: {'✅ 开' if auto else '❌ 关'}（/auto 切换）"
+    print(f"   智能路由: {'✅ 默认开启' if auto else '❌ 已关闭'}（/auto 切换）"
           + (f" | 会话: {session_id}" if session_id else ""))
     print("=" * 60)
     while True:
@@ -484,11 +498,8 @@ def repl(registry: AgentRegistry, default_type: str, factory: AgentFactory,
                               and os.getenv("LLM_BASE_URL"))
                 router = AgentRouter(factory, llm_available=llm_ok, use_llm=llm_ok,
                                      default_type=default_type)
-                print(f"🧭 智能路由已启用（{'LLM 分类 + ' if llm_ok else ''}"
-                      f"关键词规则，兜底 {default_type}）")
-            else:
-                print(f"✅ 智能路由已{'开启' if auto else '关闭'}"
-                      f"（当前 Agent: {active}）")
+            print(f"✅ 智能路由已{'开启' if auto else '关闭'}"
+                  f"（当前 Agent: {active}）")
             continue
         if text == "/status":
             agent = registry.get(active)
@@ -555,7 +566,6 @@ def main(argv: list) -> int:
             args = [a for a in args if a != agent_type]
 
     demo_only = "--demo" in flags
-    auto_mode = "--auto" in flags
     stream_mode = "--stream" in flags
     # 会话持久化：--session <id> 指定（或复用）会话；未指定时无状态
     session_id = None
@@ -574,17 +584,13 @@ def main(argv: list) -> int:
         print("💡 提示: 加 --session <id> 可启用断点续聊" if not demo_only else "")
 
     factory, registry, default = build_agents(demo_only=demo_only)
-    # 智能路由（auto 模式）：LLM 可用时优先 LLM 分类，否则关键词规则
-    router = None
-    if auto_mode:
-        from dotenv import load_dotenv
-        load_dotenv()
-        llm_ok = bool(os.getenv("LLM_MODEL_ID") and os.getenv("LLM_API_KEY")
-                      and os.getenv("LLM_BASE_URL"))
-        router = AgentRouter(factory, llm_available=llm_ok, use_llm=llm_ok,
-                             default_type=default)
-        print(f"🧭 智能路由已启用（{'LLM 分类 + ' if llm_ok else ''}关键词规则，"
-              f"兜底 {default}）")
+    # 智能路由：默认开启，自动选择最合适的 Agent
+    from dotenv import load_dotenv
+    load_dotenv()
+    llm_ok = bool(os.getenv("LLM_MODEL_ID") and os.getenv("LLM_API_KEY")
+                  and os.getenv("LLM_BASE_URL"))
+    router = AgentRouter(factory, default_type=default)
+    print(f"🧭 智能路由已启用（特征收敛域路由，兜底 {default}）")
 
     if "--list" in flags:
         print("📋 可用 Agent 类型:")
@@ -617,7 +623,7 @@ def main(argv: list) -> int:
     target = agent_type or default
     activate(factory, registry, target,
              session_store=session_store, session_id=session_id)
-    repl(registry, target, factory, auto_mode=auto_mode, router=router,
+    repl(registry, target, factory, router=router,
          session_store=session_store, session_id=session_id)
     return 0
 

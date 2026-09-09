@@ -16,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
+from conftest import requires_pg
 
+
+@requires_pg
 def test_01_concurrent_stats():
     """并发 stats 调用 N 次（LlamaIndex 内部使用 asyncio，线程池需 async 兼容）。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -33,6 +36,7 @@ def test_01_concurrent_stats():
     print(f"✅ test_01_concurrent_stats: {n} 次连续调用通过")
 
 
+@requires_pg
 def test_02_concurrent_search():
     """连续 search 调用。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -47,6 +51,7 @@ def test_02_concurrent_search():
     print(f"✅ test_02_concurrent_search: {len(queries)} 次搜索通过")
 
 
+@requires_pg
 def test_03_circuit_breaker():
     """测试 ToolRegistry 熔断器保护。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -76,6 +81,7 @@ def test_03_circuit_breaker():
     print("✅ test_03_circuit_breaker: 熔断器保护通过")
 
 
+@requires_pg
 def test_04_concurrent_query():
     """连续 query 调用（含 LLM 生成）。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool

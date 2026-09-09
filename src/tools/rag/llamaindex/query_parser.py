@@ -40,7 +40,6 @@ class QueryParser:
         ],
     }
 
-    # 标签关键词 → 映射到标准标签名
     TAG_PATTERNS: Dict[str, List[str]] = {
         "RAG": ["rag", "检索增强生成", "检索增强"],
         "LLM": ["llm", "大语言模型", "大模型", "语言模型"],
@@ -85,7 +84,6 @@ class QueryParser:
         return filters, cleaned
 
     def _extract_doc_type(self, query_lower: str) -> Optional[str]:
-        """从查询中提取文档类型。"""
         scores: Dict[str, int] = {}
         for dtype, patterns in self.DOC_TYPE_PATTERNS.items():
             score = sum(1 for p in patterns if p in query_lower)

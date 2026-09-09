@@ -1,22 +1,5 @@
-"""CircuitBreaker：工具/服务调用的熔断器。
+"""CircuitBreaker：三态熔断器（CLOSED / OPEN / HALF_OPEN），防止工具连续失败拖垮 Agent。"""
 
-三态模型：
-  CLOSED（关闭）    正常状态，调用放行；连续失败达到阈值 → OPEN
-  OPEN（打开）      快速失败，直接拒绝调用（抛 CircuitOpenError）；
-                    超过恢复时间后允许进入 HALF_OPEN 试探
-  HALF_OPEN（半开） 放行少量试探请求；成功达到阈值 → CLOSED，
-                    任一失败 → 立即回到 OPEN
-
-用途：防止工具连续失败拖垮 Agent，给失败服务恢复时间，避免雪崩。
-
-使用方式:
-    breaker = CircuitBreaker("api", failure_threshold=3, recovery_timeout=30)
-    result = breaker.call(risky_func, *args)     # 打开时抛 CircuitOpenError
-    breaker.status()                              # 查看状态与统计
-"""
-
-import sys
-import os
 import time
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
@@ -69,11 +52,6 @@ class CircuitBreaker:
     # ------------------------------------------------------------
 
     def call(self, func: Callable, *args, **kwargs) -> Any:
-        """执行被保护函数：打开时快速失败，半开时限制试探。
-
-        Raises:
-            CircuitOpenError: 熔断器打开（快速失败）
-        """
         self.stats["total"] += 1
         self._maybe_transition_to_half_open()
 
@@ -100,10 +78,6 @@ class CircuitBreaker:
         else:
             self._on_success()
             return result
-
-    # ------------------------------------------------------------
-    # 状态转移
-    # ------------------------------------------------------------
 
     def _maybe_transition_to_half_open(self):
         """OPEN 超过恢复时间 → HALF_OPEN。"""
@@ -172,7 +146,6 @@ class CircuitBreaker:
             self._half_open_calls += 1
 
     def record_success(self) -> None:
-        """记录一次成功（显式模式）。"""
         self.stats["successes"] += 1
         if self.state == CircuitState.HALF_OPEN:
             self._half_open_successes += 1
@@ -233,16 +206,7 @@ def circuit_breaker(name: Optional[str] = None, **breaker_kwargs) -> Callable:
     return decorator
 
 
-# ============================================================
-# 演示
-# ============================================================
-
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🛑 CircuitBreaker 熔断器演示")
-    print("=" * 60)
-
-    # 模拟不稳定服务：前 2 次失败（与阈值一致，之后恢复）
     class FlakyService:
         def __init__(self):
             self.calls = 0
@@ -262,9 +226,9 @@ if __name__ == "__main__":
             result = breaker.call(svc.invoke, 21)
             print(f"   {desc:<34} → 成功 result={result}")
         except CircuitOpenError as e:
-            print(f"   {desc:<34} → 🛑 快速失败: {str(e)[:40]}...")
+            print(f"   {desc:<34} -> 快速失败: {str(e)[:40]}...")
         except ConnectionError as e:
-            print(f"   {desc:<34} → 失败: {type(e).__name__}")
+            print(f"   {desc:<34} -> 失败: {type(e).__name__}")
 
     print("\n--- 阶段1: 连续失败触发熔断 ---")
     call_once("调用1（失败1）")
@@ -298,7 +262,7 @@ if __name__ == "__main__":
     try:
         risky()
     except CircuitOpenError as e:
-        print(f"   第二次调用 → {type(e).__name__}（已熔断 ✅）")
+        print(f"   第二次调用 -> {type(e).__name__}（已熔断）")
     print(f"   装饰器状态: {risky.circuit_breaker.status()['state']}")
 
-    print("\n✅ CircuitBreaker 演示完成")
+    print("\nCircuitBreaker 演示完成")

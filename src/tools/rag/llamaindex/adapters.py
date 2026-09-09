@@ -26,12 +26,8 @@ from llama_index.core.base.llms.types import (
 )
 from llama_index.core.bridge.pydantic import Field
 
-from src.tools.memory.memory_tool import EmbeddingClient
+from src.tools.memory.modules import EmbeddingClient
 
-
-# ============================================================
-# Embedding 适配器
-# ============================================================
 
 class DashScopeEmbedding(BaseEmbedding):
     """将项目现有的 EmbeddingClient 封装为 LlamaIndex BaseEmbedding。"""
@@ -131,10 +127,6 @@ class QwenLLM(CustomLLM):
             full += chunk
             yield CompletionResponse(text=full, delta=chunk)
 
-
-# ============================================================
-# 便捷函数
-# ============================================================
 
 def get_default_embed_model() -> DashScopeEmbedding:
     return DashScopeEmbedding()

@@ -685,7 +685,7 @@ if __name__ == "__main__":
 
     # 记忆系统
     try:
-        from src.tools.memory.memory_tool import MemoryManager, MemoryEntry
+        from src.tools.memory.modules import MemoryManager, MemoryEntry
         from datetime import datetime as _dt
         memory = MemoryManager(config={"enabled_types": ["working", "episodic"],
                                        "working_capacity": 30})

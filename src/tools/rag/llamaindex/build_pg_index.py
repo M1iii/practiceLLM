@@ -1,23 +1,6 @@
-"""
-第二阶段：接入 PGVectorStore，构建索引存入 PostgreSQL，启用 Parent-Child 结构。
-
-离线脚本功能：
-  1. 从环境变量读取 PostgreSQL 连接配置（复用现有配置 PG_HOST/PG_PORT/...）
-  2. SimpleDirectoryReader 加载 docs/ 文档
-  3. 构建 Parent-Child 节点（大块用于生成，小块用于检索）
-  4. 使用 PGVectorStore 将索引存入 PostgreSQL 数据库
-  5. 验证索引写入后进行检索测试
-
-用法：
-  cd 项目根目录
-  python -m rag.llamaindex.build_pg_index [--reset]
-
-选项：
-  --reset  重置表格（删除旧索引并重建）
-"""
+"""离线脚本：接入 PGVectorStore，构建 Parent-Child 索引存入 PostgreSQL。"""
 
 import os
-import sys
 import argparse
 from pathlib import Path
 
@@ -123,14 +106,14 @@ def _extract_and_describe_images(documents: list, docs_dir: str) -> list:
 
     # 检查 VL 客户端是否可用
     if not os.getenv("DASHSCOPE_API_KEY"):
-        print("  ⚠️  DASHSCOPE_API_KEY 未设置，跳过图片索引")
+        print("  [WARN] DASHSCOPE_API_KEY 未设置，跳过图片索引")
         return image_docs
 
     try:
         from src.tools.vl_media.vl_client import VLClient
         client = VLClient()
     except Exception as e:
-        print(f"  ⚠️  VLClient 初始化失败: {e}，跳过图片索引")
+        print(f"  [WARN] VLClient 初始化失败: {e}，跳过图片索引")
         return image_docs
 
     # 收集所有图片引用: (源文档, 图片路径, alt文字)
@@ -206,22 +189,13 @@ def _extract_and_describe_images(documents: list, docs_dir: str) -> list:
             },
         )
         image_docs.append(img_doc)
-        print(f"    ✅ {img_path}: 描述已生成 ({len(description)} 字符)")
+        print(f"    [OK] {img_path}: 描述已生成 ({len(description)} 字符)")
 
     return image_docs
 
 
 def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
-    """构建 Parent-Child 分层索引。
-
-    Parent-Child 策略：
-      - 父节点：大粒度（chunk_size=1024），保留完整上下文 → 喂给 LLM 生成
-      - 子节点：小粒度（chunk_size=256），精确匹配语义 → 用于检索
-    """
-    print("\n=" * 60)
-    print("Step 1: 加载文档")
-    print("=" * 60)
-
+    print("\n--- Step 1: 加载文档 ---")
     reader = SimpleDirectoryReader(
         input_dir=docs_dir,
         required_exts=[".md", ".txt"],
@@ -233,11 +207,6 @@ def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
         src = doc.metadata.get("file_name", "未知")
         length = len(doc.text)
         print(f"    - {src} ({length} 字符)")
-
-    # 结构化元数据抽取
-    print("\n" + "=" * 60)
-    print("Step 1.5: 抽取结构化元数据")
-    print("=" * 60)
 
     extractor = MetadataExtractor()
     enriched_docs = []
@@ -253,10 +222,6 @@ def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
 
     print(f"\n  结构化元数据抽取完成，共 {len(enriched_docs)} 个文档")
 
-    # 多模态图片索引：从文档中提取图片引用，用 VL 模型生成描述
-    print("\n" + "=" * 60)
-    print("Step 1.8: 多模态图片索引（VL 模型生成描述）")
-    print("=" * 60)
     image_docs = _extract_and_describe_images(documents, docs_dir)
     if image_docs:
         print(f"  生成了 {len(image_docs)} 个图片描述文档")
@@ -268,45 +233,29 @@ def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
     print("Step 2: 构建 Parent-Child 节点")
     print("=" * 60)
 
-    # HierarchicalNodeParser 会自动切分出不同粒度的节点
+    # 一次解析：用 enriched_docs（含元数据），确保节点 ID 唯一
     node_parser = HierarchicalNodeParser.from_defaults(
-        chunk_sizes=[1024, 256],  # [父块大小, 子块大小]
-        chunk_overlap=30,          # 重叠大小（所有层级统一）
+        chunk_sizes=[1024, 256],
+        chunk_overlap=30,
     )
-    nodes = node_parser.get_nodes_from_documents(documents)
-
-    # 按层级划分
-    parent_nodes = [n for n in nodes if n.metadata.get("level") == 0]
-    child_nodes = [n for n in nodes if n.metadata.get("level") == 1]
+    nodes = node_parser.get_nodes_from_documents(enriched_docs)
     leaf_nodes = get_leaf_nodes(nodes)
 
     print(f"  切分完成:")
     print(f"    总节点数: {len(nodes)}")
-    print(f"    父节点 (level 0): {len(parent_nodes)} (大粒度，用于生成)")
-    print(f"    子节点 (level 1): {len(child_nodes)} (小粒度，用于检索)")
     print(f"    叶子节点 (leaf): {len(leaf_nodes)}")
-
-    print("\n=" * 60)
-    print("Step 3: 构建 VectorStoreIndex 并写入 PostgreSQL")
-    print("=" * 60)
 
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-    # 手动构建索引并写入
-    index = VectorStoreIndex.from_documents(
-        documents=enriched_docs,
+    # 直接使用已解析的叶子节点，避免重复解析导致 KeyError
+    index = VectorStoreIndex(
+        nodes=leaf_nodes,
         storage_context=storage_context,
         embed_model=embed_model,
         show_progress=True,
-        transformations=[node_parser],
     )
 
     print(f"\n  索引构建完成，数据已写入 PostgreSQL 表 {args.table_name}")
-
-    # 创建 JSONB GIN 索引
-    print("\n" + "=" * 60)
-    print("Step 3.5: 创建 JSONB GIN 索引（结构化过滤）")
-    print("=" * 60)
 
     sf = StructuredFilter(table_name=args.table_name)
     created = sf.create_gin_index()
@@ -321,11 +270,6 @@ def build_parent_child_index(vector_store, docs_dir: str, embed_model, args):
 
 
 def test_retrieval(index, llm):
-    """测试检索和问答。"""
-    print("\n=" * 60)
-    print("Step 4: 测试检索与问答")
-    print("=" * 60)
-
     retriever = index.as_retriever(similarity_top_k=3)
 
     test_queries = [
@@ -345,10 +289,6 @@ def test_retrieval(index, llm):
             preview = result.node.text[:60].replace("\n", " ")
             if score is not None:
                 print(f"    [{i + 1}] (score={score:.4f}, level={level}, src={src}) {preview}...")
-
-    print("\n" + "=" * 60)
-    print("Step 5: 端到端问答测试")
-    print("=" * 60)
 
     query_engine = index.as_query_engine(
         llm=llm,
@@ -408,7 +348,6 @@ def main():
         vector_store, args.docs_dir, embed_model, args
     )
 
-    # 4. 测试检索
     test_retrieval(index, llm)
 
     print(f"\n  总结:")

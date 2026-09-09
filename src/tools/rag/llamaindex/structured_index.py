@@ -1,19 +1,4 @@
-"""
-结构化索引模块：元数据抽取 + JSONB GIN 索引 + 结构化过滤检索。
-
-功能：
-  - MetadataExtractor：从文档内容和文件名抽取结构化元数据
-    (doc_type, tags, section, file_name, file_type)
-  - StructuredFilter：在 PostgreSQL 上执行 JSONB 过滤，获取候选 node_id 列表
-  - 先筛后查：先通过 GIN 索引过滤，再在候选集上做混合检索
-
-用法：
-    from src.tools.rag.llamaindex.structured_index import MetadataExtractor, StructuredFilter
-    extractor = MetadataExtractor()
-    metadata = extractor.extract(doc)
-    filter = StructuredFilter(table_name="llamaindex_rag")
-    candidate_node_ids = filter.filter(filters={"doc_type": "technical", "tags": ["chunking"]})
-"""
+"""结构化索引模块：元数据抽取 + JSONB GIN 索引 + 结构化过滤检索。"""
 
 import os
 import json
@@ -68,12 +53,8 @@ class DocumentMetadata:
 
 
 class MetadataExtractor:
-    """从文档抽取结构化元数据。
+    """规则抽取结构化元数据，无需 LLM。"""
 
-    规则抽取 + 简单关键词识别，无需 LLM，保证离线构建速度。
-    """
-
-    # 文档类型关键词映射
     DOC_TYPE_KEYWORDS = {
         "concept": [
             "什么是", "定义", "介绍", "概念", "解释", "概述", "简介",
@@ -107,7 +88,6 @@ class MetadataExtractor:
         """从 Document 抽取结构化元数据。"""
         metadata = DocumentMetadata()
 
-        # 1. 从已有 metadata 获取基础信息
         if doc.metadata:
             metadata.file_name = doc.metadata.get("file_name")
             if metadata.file_name and "." in metadata.file_name:
@@ -122,7 +102,6 @@ class MetadataExtractor:
             if len(clean_title) > 3 and len(clean_title) < 100:
                 metadata.section = clean_title
 
-        # 3. 根据关键词判断文档类型
         text_lower = doc.text.lower()
         doc_type_scores: Dict[str, int] = {}
         for dtype, keywords in self.DOC_TYPE_KEYWORDS.items():
@@ -210,10 +189,10 @@ class StructuredFilter:
             conn.close()
             return False  # 已存在
 
-        # 创建 GIN 索引
+        # 创建 GIN 索引（json 列需 cast 为 jsonb）
         create_sql = text(f"""
             CREATE INDEX {actual_table}_metadata_gin
-            ON {actual_table} USING GIN (metadata_)
+            ON {actual_table} USING GIN ((metadata_::jsonb) jsonb_path_ops)
         """)
         conn.execute(create_sql)
         conn.commit()
@@ -233,17 +212,15 @@ class StructuredFilter:
 
         for key, value in filters.items():
             if isinstance(value, list):
-                # 标签数组 → 包含任一标签
                 param_name = f"p{idx}"
-                conditions.append(f"metadata_->'{key}' ?| :{param_name}")
+                conditions.append(f"(metadata_::jsonb)->'{key}' ?| :{param_name}")
                 params[param_name] = value
                 idx += 1
             elif value is None:
-                conditions.append(f"metadata_->'{key}' IS NULL")
+                conditions.append(f"(metadata_::jsonb)->'{key}' IS NULL")
             else:
-                # 标量 → JSONB 精确匹配
                 param_name = f"p{idx}"
-                conditions.append(f"metadata_ @> :{param_name}::jsonb")
+                conditions.append(f"metadata_::jsonb @> CAST(:{param_name} AS jsonb)")
                 params[param_name] = json.dumps({key: value})
                 idx += 1
 
@@ -296,28 +273,7 @@ class StructuredFilter:
 
 
 class StructuredFilterRetriever:
-    """先筛后查检索器：先通过 JSONB 结构化过滤缩小候选集，再执行混合检索。
-
-    流程：
-      1. 解析查询 → 提取结构化过滤条件 (filters, clean_query)
-      2. 判断是否有过滤条件:
-         - 有过滤器 → 获取候选 node_id 列表，在候选集上做混合检索
-         - 无过滤器 → 使用完整混合检索
-      3. 返回检索结果
-
-    用法：
-        from src.tools.rag.llamaindex.structured_index import StructuredFilterRetriever
-        from src.tools.rag.llamaindex.query_parser import QueryParser
-
-        retriever = StructuredFilterRetriever(
-            table_name="llamaindex_rag",
-            embed_dim=2560,
-            similarity_top_k=5,
-            dense_weight=0.7,
-            sparse_weight=0.3,
-        )
-        results = retriever.retrieve("RAG 技术文档中关于分块的策略")
-    """
+    """先筛后查检索器：JSONB 结构化过滤缩小候选集，再执行混合检索。"""
 
     def __init__(
         self,
@@ -359,21 +315,27 @@ class StructuredFilterRetriever:
             similarity_top_k=self.similarity_top_k * 2
         )
         all_nodes = _get_all_nodes_from_index(self._index)
-        sparse_retriever = BM25Retriever.from_defaults(
-            nodes=all_nodes,
-            similarity_top_k=self.similarity_top_k * 2,
-            language="chinese",
-            skip_stemming=True,
-        )
-
-        self._full_retriever = QueryFusionRetriever(
-            retrievers=[dense_retriever, sparse_retriever],
-            retriever_weights=[self.dense_weight, self.sparse_weight],
-            similarity_top_k=self.similarity_top_k,
-            num_queries=1,
-            mode="reciprocal_rerank",
-            verbose=self.verbose,
-        )
+        if not all_nodes:
+            self._full_retriever = QueryFusionRetriever(
+                retrievers=[dense_retriever], retriever_weights=[1.0],
+                similarity_top_k=self.similarity_top_k, num_queries=1,
+                mode="reciprocal_rerank", verbose=self.verbose,
+            )
+        else:
+            sparse_retriever = BM25Retriever.from_defaults(
+                nodes=all_nodes,
+                similarity_top_k=self.similarity_top_k * 2,
+                language="chinese",
+                skip_stemming=True,
+            )
+            self._full_retriever = QueryFusionRetriever(
+                retrievers=[dense_retriever, sparse_retriever],
+                retriever_weights=[self.dense_weight, self.sparse_weight],
+                similarity_top_k=self.similarity_top_k,
+                num_queries=1,
+                mode="reciprocal_rerank",
+                verbose=self.verbose,
+            )
 
     def retrieve(
         self,

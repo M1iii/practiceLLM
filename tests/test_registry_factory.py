@@ -24,9 +24,10 @@ def test_full_build_no_failures():
     assert bundle.failures == []
     expected = {"Calculator", "Time", "Search", "Weekday", "TerminalTool",
                 "AdvancedSearch", "MemoryTool", "NoteTool", "RagTool",
-                "Skill", "SubAgent"}
+                "Skill", "SubAgent", "VLMediaTool",
+                "StructuredDataTool", "LlamaIndexRAGTool"}
     assert set(bundle.names) == expected
-    assert len(bundle.names) == 11
+    assert len(bundle.names) == 14
 
 
 def test_build_subset():
@@ -48,7 +49,7 @@ def test_role_filter_views():
     tf = build_role_tool_filter()
     bundle = build_all_tools_registry(agent_factory=_factory(), tool_filter=tf)
     registry = bundle.registry
-    assert len(registry.list_tools(owner="analyst")) == 11
+    assert len(registry.list_tools(owner="analyst")) == 14
     # writer 无终端/子代理
     writer = registry.list_tools(owner="writer")
     assert "TerminalTool" not in writer and "SubAgent" not in writer

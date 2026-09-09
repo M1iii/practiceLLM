@@ -188,6 +188,18 @@ class MemoryEngine:
             except Exception as e:
                 logger.warning("MemoryEngine: 深层整合失败: %s", e)
 
+            # 感知记忆固化：有非文本模态标记的条目 → perceptual
+            try:
+                result = self._tool.run({
+                    "action": "consolidate",
+                    "from_type": "episodic",
+                    "to_type": "perceptual",
+                    "modality_filter": "non_text",  # 仅非文本模态
+                })
+                logger.info("MemoryEngine: 自动整合 episodic→perceptual (%s)", result[:60])
+            except Exception as e:
+                logger.warning("MemoryEngine: 感知整合失败: %s", e)
+
             # 知识抽取：从当前对话提取实体/关系存入语义记忆
             if question or answer:
                 self._extract_knowledge(question, answer)

@@ -29,7 +29,8 @@ class FunctionCallAgent:
 
     DEFAULT_SYSTEM_PROMPT = (
         "你是一个有用的AI助手，可以借助工具来帮助用户回答问题。\n"
-        "当用户提到图片或提供图片路径时，使用 VLMediaTool 分析图片内容。"
+        "当用户提到图片或提供图片路径时，使用 VLMediaTool 分析图片内容。\n"
+        "调用工具收集到足够信息后，请直接给出文本回答，不要继续调用工具。"
     )
 
     # 终端错误信号前缀：匹配到这些前缀的工具结果将立即禁用该工具
@@ -237,10 +238,16 @@ class FunctionCallAgent:
             self._append_turn(question, final_answer)
             return final_answer
 
-        # 4. 达到最大迭代次数
-        print(f"\n⚠️ 已达到最大工具调用轮次 ({self.max_iterations})，强制终止。")
-        self._append_turn(question, "抱歉，处理超时。")
-        return "抱歉，处理超时。"
+        # 4. 达到最大迭代次数，用已有工具结果请求合成
+        messages.append({"role": "user",
+                         "content": "请基于以上所有工具结果，给出最终回答。"})
+        fallback = self._invoke_with_tools(messages, openai_tools, tool_choice="none", temperature=0)
+        final_answer = fallback.choices[0].message.content or "抱歉，处理超时。"
+        print(f"\n⚠️ 已达到最大工具调用轮次 ({self.max_iterations})，强制合成。")
+        print(f"✅ 最终回答:\n{final_answer}")
+        print("=" * 60)
+        self._append_turn(question, final_answer)
+        return final_answer
 
     def _append_turn(self, question: str, answer: str):
         """保存一轮对话到历史，并裁剪超限轮次。"""

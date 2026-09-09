@@ -15,9 +15,11 @@ import json
 import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from conftest import requires_pg
 from src.core.storage import PostgreSQLBackend
 
 
+@requires_pg
 def test_01_connection():
     """测试 PostgreSQL 连接与 pgvector 状态。"""
     print("=" * 60)
@@ -29,6 +31,7 @@ def test_01_connection():
     print("  连接成功 ✅\n")
 
 
+@requires_pg
 def test_02_jsonb_write_and_read():
     """测试 JSONB 写入与读取。"""
     print("=" * 60)
@@ -100,6 +103,7 @@ def test_02_jsonb_write_and_read():
     print("  JSONB 测试全部通过 ✅\n")
 
 
+@requires_pg
 def test_03_vector_store_and_search():
     """测试向量存储与检索。"""
     print("=" * 60)
@@ -160,12 +164,13 @@ def test_03_vector_store_and_search():
     print("  向量检索测试全部通过 ✅\n")
 
 
+@requires_pg
 def test_04_episodic_memory_integration():
     """测试 EpisodicMemory 与 PostgreSQL 后端集成。"""
     print("=" * 60)
     print("Test 4: EpisodicMemory 集成")
     print("=" * 60)
-    from src.tools.memory.memory_tool import EpisodicMemory, MemoryEntry
+    from src.tools.memory.modules import EpisodicMemory, MemoryEntry
 
     backend = PostgreSQLBackend()
     # 清理之前测试留下的 pg-test-* 数据
@@ -231,7 +236,7 @@ def test_05_sqlite_compatibility():
     print("=" * 60)
     print("Test 5: SQLite 兼容性（默认模式）")
     print("=" * 60)
-    from src.tools.memory.memory_tool import EpisodicMemory, MemoryEntry
+    from src.tools.memory.modules import EpisodicMemory, MemoryEntry
     import tempfile
 
     # SQLite 模式（默认）
@@ -256,6 +261,7 @@ def test_05_sqlite_compatibility():
     print("  SQLite 兼容性测试通过 ✅\n")
 
 
+@requires_pg
 def test_06_jsonb_cleanup():
     """清理测试数据。"""
     print("=" * 60)

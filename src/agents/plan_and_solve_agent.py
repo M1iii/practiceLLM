@@ -1,10 +1,12 @@
 ﻿import re
 import ast
+import json
 import sys
 import os
 
 
 from src.core.llm import practiceLLM
+from src.tools.framework.tool_system import Tool, ToolRegistry
 from typing import List, Dict, Optional
 
 
@@ -71,6 +73,7 @@ class Executor:
     """
     执行器：按计划逐步执行子任务，维护历史记录。
     每一步都会将原始问题、完整计划、历史结果和当前步骤传入提示词，确保 LLM 有充分上下文。
+    当工具可用时，使用 Function Calling 让 LLM 自主调用工具获取信息。
     """
 
     DEFAULT_PROMPT = """你是一位顶级的AI执行专家，你的任务是严格按照给定的计划，一步步地解决问题。
@@ -91,10 +94,13 @@ class Executor:
 
 请仅输出针对"当前步骤"的回答:"""
 
-    def __init__(self, llm: practiceLLM, prompt_template: str = None):
+    def __init__(self, llm: practiceLLM, prompt_template: str = None,
+                 tools: List[Tool] = None):
         self.llm = llm
         self.prompt_template = prompt_template or self.DEFAULT_PROMPT
         self.history: List[Dict[str, str]] = []
+        self.tools = tools or []
+        self.tool_registry = ToolRegistry(self.tools) if self.tools else None
 
     def execute(self, question: str, plan: List[str], stream: bool = False) -> str:
         """遍历计划中的每个步骤，逐步执行并记录结果。"""
@@ -119,15 +125,64 @@ class Executor:
         return self.history[-1]["result"] if self.history else ""
 
     def _execute_step(self, question: str, plan: List[str], current_step: str, stream: bool = False) -> str:
-        """构建提示词并执行单个步骤。"""
+        """构建提示词并执行单个步骤（工具可用时自动调用工具获取信息）。"""
         prompt = self.prompt_template
         prompt = prompt.replace("{question}", question)
         prompt = prompt.replace("{plan}", self._format_plan(plan))
         prompt = prompt.replace("{history}", self._format_history())
         prompt = prompt.replace("{current_step}", current_step)
 
-        messages = [{"role": "user", "content": prompt}]
-        return self.llm.invoke(messages, stream=stream)
+        if self.tool_registry and not stream:
+            return self._invoke_with_tools(prompt)
+        return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
+
+    def _invoke_with_tools(self, prompt: str, max_rounds: int = 8) -> str:
+        """使用 Function Calling 执行 LLM 调用，支持工具循环。
+
+        当工具可用时，LLM 可自主决定调用工具获取信息，然后再生成文本回答。
+        """
+        messages = [
+            {"role": "system",
+             "content": "你是一个可以调用工具的AI助手。"
+                        "调用工具收集到足够信息后，请直接给出文本回答，不要继续调用工具。"},
+            {"role": "user", "content": prompt},
+        ]
+        openai_tools = [t.to_openai_format() for t in self.tool_registry.get_tools()]
+
+        for _ in range(max_rounds):
+            response = self.llm.client.chat.completions.create(
+                model=self.llm.model,
+                messages=messages,
+                tools=openai_tools,
+                tool_choice="auto",
+                temperature=0,
+            )
+            msg = response.choices[0].message
+
+            if not msg.tool_calls:
+                return msg.content or ""
+
+            for tc in msg.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    fn_args = {}
+                result = self.tool_registry.execute_structured(fn_name, fn_args)
+                output = result.output if hasattr(result, "output") else str(result)
+                messages.append({"role": "assistant", "content": None,
+                                 "tool_calls": [tc]})
+                messages.append({"role": "tool", "tool_call_id": tc.id,
+                                 "content": str(output)})
+                print(f"🔧 {fn_name}({fn_args}) → {str(output)[:80]}")
+
+        # 超限后，使用已有工具结果请求合成，不丢弃上下文
+        messages.append({"role": "user",
+                         "content": "请基于以上所有工具结果，给出最终回答。"})
+        final = self.llm.client.chat.completions.create(
+            model=self.llm.model, messages=messages, temperature=0,
+        )
+        return final.choices[0].message.content or ""
 
     def _format_plan(self, plan: List[str]) -> str:
         """将计划格式化为可读文本，供执行器提示词使用。"""
@@ -171,6 +226,7 @@ class PlanAndSolveAgent:
         name: str = "PlanAndSolveAgent",
         planner_prompt: str = None,
         executor_prompt: str = None,
+        tools: List[Tool] = None,
     ):
         """
         初始化智能体。
@@ -178,11 +234,12 @@ class PlanAndSolveAgent:
         :param name: Agent 名称
         :param planner_prompt: 自定义规划器提示词
         :param executor_prompt: 自定义执行器提示词
+        :param tools: 可用工具列表（执行阶段使用）
         """
         self.name = name
         self.llm = llm
         self.planner = Planner(llm, planner_prompt)
-        self.executor = Executor(llm, executor_prompt)
+        self.executor = Executor(llm, executor_prompt, tools=tools)
 
     def run(self, question: str, stream: bool = False) -> str:
         """

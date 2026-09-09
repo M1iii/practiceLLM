@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
+from conftest import requires_pg
+
 
 def test_01_tool_instantiation():
     """测试工具实例化。"""
@@ -60,6 +62,7 @@ def test_03_tool_registry():
     print("✅ test_03_tool_registry 通过")
 
 
+@requires_pg
 def test_04_stats():
     """测试 stats 操作。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -70,6 +73,7 @@ def test_04_stats():
     print("✅ test_04_stats 通过")
 
 
+@requires_pg
 def test_05_search():
     """测试 search 操作。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -80,6 +84,7 @@ def test_05_search():
     print("✅ test_05_search 通过")
 
 
+@requires_pg
 def test_06_query():
     """测试 query 操作。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool
@@ -108,6 +113,7 @@ def test_08_unknown_action():
     print("✅ test_08_unknown_action 通过")
 
 
+@requires_pg
 def test_09_list():
     """测试 list 操作。"""
     from src.tools.rag.llamaindex_tool import LlamaIndexRAGTool

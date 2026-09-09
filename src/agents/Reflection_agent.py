@@ -1,8 +1,11 @@
 ﻿import sys
 import os
+import json
+import time
 
 
 from src.core.llm import practiceLLM
+from src.tools.framework.tool_system import Tool, ToolRegistry
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -129,18 +132,22 @@ class ReflectionAgent:
         timeout: int = None,
         max_iterations: int = 3,
         score_threshold: int = 85,
+        tools: List[Tool] = None,
     ):
         """
         初始化反思智能体。
         :param name: Agent 名称，用于输出展示
         :param max_iterations: 最大反思-改进轮次
         :param score_threshold: 质量评分阈值，达到或超过则提前终止（0-100）
+        :param tools: 可用工具列表（用于事实核查和信息检索）
         """
         self.name = name
         self.llm = practiceLLM(model=model, apiKey=apiKey, baseUrl=baseUrl, timeout=timeout)
         self.max_iterations = max_iterations
         self.score_threshold = score_threshold
         self.memory = ShortTermMemory()
+        self.tools = tools or []
+        self.tool_registry = ToolRegistry(self.tools) if self.tools else None
 
     def _build_prompt(self, template: str, **kwargs) -> str:
         """填充提示词模板中的占位符。"""
@@ -149,11 +156,65 @@ class ReflectionAgent:
             prompt = prompt.replace(f"{{{key}}}", value)
         return prompt
 
+    def _invoke_with_tools(self, prompt: str, max_rounds: int = 8) -> str:
+        """使用 Function Calling 执行 LLM 调用，支持工具循环。
+
+        当工具可用时，LLM 可自主决定调用工具获取信息，然后再生成文本回答。
+        当工具不可用时，等同于普通 LLM 调用。
+        """
+        if not self.tool_registry:
+            return self.llm.invoke([{"role": "user", "content": prompt}])
+
+        messages = [
+            {"role": "system",
+             "content": "你是一个可以调用工具的AI助手。"
+                        "调用工具收集到足够信息后，请直接给出文本回答，不要继续调用工具。"},
+            {"role": "user", "content": prompt},
+        ]
+        openai_tools = [t.to_openai_format() for t in self.tool_registry.get_tools()]
+
+        for _ in range(max_rounds):
+            response = self.llm.client.chat.completions.create(
+                model=self.llm.model,
+                messages=messages,
+                tools=openai_tools,
+                tool_choice="auto",
+                temperature=0,
+            )
+            msg = response.choices[0].message
+
+            if not msg.tool_calls:
+                return msg.content or ""
+
+            # 执行工具调用
+            for tc in msg.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    fn_args = {}
+                result = self.tool_registry.execute_structured(fn_name, fn_args)
+                output = result.output if hasattr(result, "output") else str(result)
+                messages.append({"role": "assistant", "content": None,
+                                 "tool_calls": [tc]})
+                messages.append({"role": "tool", "tool_call_id": tc.id,
+                                 "content": str(output)})
+                print(f"🔧 {fn_name}({fn_args}) → {str(output)[:80]}")
+
+        # 超限后，使用已有工具结果请求合成，不丢弃上下文
+        messages.append({"role": "user",
+                         "content": "请基于以上所有工具结果，给出最终回答。"})
+        final = self.llm.client.chat.completions.create(
+            model=self.llm.model, messages=messages, temperature=0,
+        )
+        return final.choices[0].message.content or ""
+
     def _initial(self, task: str, stream: bool = False) -> str:
-        """阶段一：生成初始回答。"""
+        """阶段一：生成初始回答（工具可用时自动调用工具获取信息）。"""
         prompt = self._build_prompt(self.INITIAL_PROMPT, task=task)
-        messages = [{"role": "user", "content": prompt}]
-        return self.llm.invoke(messages, stream=stream)
+        if self.tool_registry and not stream:
+            return self._invoke_with_tools(prompt)
+        return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
 
     def _reflect(self, task: str, content: str, stream: bool = False) -> str:
         """阶段二：反思当前回答，返回反馈意见。"""
@@ -162,10 +223,11 @@ class ReflectionAgent:
         return self.llm.invoke(messages, stream=stream)
 
     def _refine(self, task: str, last_attempt: str, feedback: str, stream: bool = False) -> str:
-        """阶段三：根据反馈改进回答。"""
+        """阶段三：根据反馈改进回答（工具可用时自动调用工具核查事实）。"""
         prompt = self._build_prompt(self.REFINE_PROMPT, task=task, last_attempt=last_attempt, feedback=feedback)
-        messages = [{"role": "user", "content": prompt}]
-        return self.llm.invoke(messages, stream=stream)
+        if self.tool_registry and not stream:
+            return self._invoke_with_tools(prompt)
+        return self.llm.invoke([{"role": "user", "content": prompt}], stream=stream)
 
     def _score(self, task: str, content: str) -> int:
         """

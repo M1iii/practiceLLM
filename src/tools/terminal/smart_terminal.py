@@ -29,7 +29,7 @@ from src.tools.terminal.terminal_tool import TerminalTool
 from src.tools.memory.note_tool import NoteTool
 from src.tools.memory.note_context_bridge import NoteContextBridge
 from src.tools.context.context_builder import ContextPacket, ContextBuilder, ContextConfig
-from src.tools.memory.memory_tool import MemoryManager, MemoryEntry
+from src.tools.memory.modules import MemoryManager, MemoryEntry
 
 
 class SmartTerminal:
